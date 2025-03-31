@@ -156,3 +156,12 @@ If this file is present, the `assemble` script will create the specified site an
    - Create the site specified in `site-config.json`.
 
 By using these configuration files, you can automate and customize the build process to suit your specific requirements.
+
+## Startup log
+### Example Startup Log  
+
+Below is an example of the startup log when running the application image:  
+
+![Startup Log](./startup.png)  
+
+This log provides insights into the initialization process, including database setup, server startup, and any warnings or errors encountered.  
