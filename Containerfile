@@ -31,10 +31,20 @@ ncurses-devel \
 xz-devel \
 libuuid-devel \
 mariadb-connector-c-devel \
-jq.aarch64 \
-&& dnf clean all && \
+jq.aarch64 && \
 rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/dnf.*
 
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/x86_64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
+        dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.x86_64.rpm; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/aarch64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
+        dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.aarch64.rpm; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    dnf clean all
 #We need to see if this is needed
 #RUN dnf -y install https://rpmfind.net/linux/almalinux/9.4/AppStream/ppc64le/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm 
 
@@ -163,7 +173,7 @@ USER frappe
 # This default user is created in the openshift/base-centos7 image
 RUN  pip install frappe-bench \
      && pip install redis \
-     && pip install   mysql-connector-python
+     && pip install mysql-connector-python
 
 WORKDIR /home/frappe
 ARG FRAPPE_BRANCH=version-15
@@ -182,8 +192,8 @@ RUN  bench init \
   find apps -mindepth 1 -path "*/.git" | xargs rm -fr
 
 
-# Expose necessary ports
-EXPOSE 3306 6379 8000
+# Expose necessary portsss
+EXPOSE 8000 3306 6379
 WORKDIR /home/frappe/frappe-bench
 USER 1001
 CMD ["/usr/libexec/s2i/usage"]
