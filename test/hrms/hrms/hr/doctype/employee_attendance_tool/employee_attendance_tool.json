@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "creation": "2016-01-27 14:59:47.849379",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "date",
+  "section_break_ackd",
+  "company",
+  "column_break_bhny",
+  "department",
+  "column_break_3",
+  "branch",
+  "unmarked_attendance_section",
+  "employees_html",
+  "attendance_details_section",
+  "status",
+  "late_entry",
+  "early_exit",
+  "column_break_kecn",
+  "shift",
+  "marked_attendance_section",
+  "marked_attendance_html",
+  "column_break_khjs"
+ ],
+ "fields": [
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "depends_on": "date",
+   "description": "Unmarked Attendance",
+   "fieldname": "unmarked_attendance_section",
+   "fieldtype": "Section Break",
+   "label": "Select Employees"
+  },
+  {
+   "fieldname": "employees_html",
+   "fieldtype": "HTML",
+   "label": "Employees HTML",
+   "read_only": 1
+  },
+  {
+   "depends_on": "date",
+   "fieldname": "marked_attendance_section",
+   "fieldtype": "Section Break",
+   "label": "Marked Attendance"
+  },
+  {
+   "fieldname": "marked_attendance_html",
+   "fieldtype": "HTML",
+   "label": "Marked Attendance HTML"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "\nPresent\nAbsent\nHalf Day\nWork From Home",
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "Set filters to fetch employees",
+   "fieldname": "section_break_ackd",
+   "fieldtype": "Section Break",
+   "label": "Filters"
+  },
+  {
+   "depends_on": "date",
+   "description": "Set attendance details for the employees select above",
+   "fieldname": "attendance_details_section",
+   "fieldtype": "Section Break",
+   "hide_border": 1,
+   "label": "Set Attendance Details"
+  },
+  {
+   "fieldname": "column_break_bhny",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "late_entry",
+   "fieldtype": "Check",
+   "label": "Late Entry"
+  },
+  {
+   "default": "0",
+   "fieldname": "early_exit",
+   "fieldtype": "Check",
+   "label": "Early Exit"
+  },
+  {
+   "fieldname": "column_break_kecn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "shift",
+   "fieldtype": "Link",
+   "label": "Shift",
+   "options": "Shift Type"
+  },
+  {
+   "fieldname": "column_break_khjs",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "hide_toolbar": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2024-07-08 20:02:36.408240",
+ "modified_by": "Administrator",
+ "module": "HR",
+ "name": "Employee Attendance Tool",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "HR Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

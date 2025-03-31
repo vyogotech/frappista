@@ -1,0 +1,81 @@
+#!/bin/bash -e
+#
+# S2I run script for the 'vyogotech/frappe:s2i-base' image.
+# The run script executes the server that runs your application.
+#
+# For more information see the documentation:
+# https://github.com/openshift/source-to-image/blob/master/docs/builder_image.md
+#
+
+# Set up logging and error handling
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+error() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $1" >&2
+  exit 1
+}
+
+# Create pid directory
+mkdir -p /tmp/pids
+
+# Ensure required commands are available
+command -v mysqld >/dev/null 2>&1 || error "mysqld is not installed. Please install MariaDB."
+command -v redis-server >/dev/null 2>&1 || error "redis-server is not installed. Please install Redis."
+command -v bench >/dev/null 2>&1 || error "bench is not installed. Please install Bench."
+
+# Start MariaDB with proper daemonization
+log "Starting MariaDB..."
+if mysqld --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
+  sleep 2
+  if kill -0 $(cat /tmp/pids/mysqld.pid 2>/dev/null) 2>/dev/null; then
+    log "MariaDB started successfully with PID $(cat /tmp/pids/mysqld.pid)."
+  else
+    error "MariaDB process started but died immediately. Check /var/log/mysqld.log for details."
+  fi
+else
+  error "Failed to start MariaDB."
+fi
+
+# Start Redis server with proper daemonization
+log "Starting Redis server..."
+if redis-server --daemonize yes --pidfile /tmp/pids/redis.pid &> /var/log/redis.log; then
+  sleep 1
+  if kill -0 $(cat /tmp/pids/redis.pid 2>/dev/null) 2>/dev/null; then
+    log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
+  else
+    error "Redis process started but died immediately. Check /var/log/redis.log for details."
+  fi
+else
+  error "Failed to start Redis server."
+fi
+
+# Function to handle cleanup on exit
+cleanup() {
+  log "Stopping services..."
+  
+  if [ -f /tmp/pids/redis.pid ]; then
+    redis-cli shutdown || kill -15 $(cat /tmp/pids/redis.pid)
+    log "Redis server stopped."
+  fi
+  
+  if [ -f /tmp/pids/mysqld.pid ]; then
+    mysqladmin shutdown || kill -15 $(cat /tmp/pids/mysqld.pid)
+    log "MariaDB stopped."
+  fi
+  
+  log "All services stopped."
+  exit 0
+}
+
+# Register cleanup function for graceful shutdown
+trap cleanup SIGINT SIGTERM
+
+# Start Frappe/ERPNext with bench in foreground
+log "Starting Frappe/ERPNext with bench..."
+bench start
+
+# This script should never reach this point, as bench start runs in foreground
+# If we get here, something went wrong
+error "Bench exited unexpectedly!"
