@@ -61,7 +61,7 @@ chmod +x s2i/bin/**
 #### Create the Builder Image  
 The following command will create a builder image named `vyogotech/frappe:s2i-base` based on the Containerfile created previously:  
 ```
-docker build -t vyogotech/frappe:s2i-base .
+make build
 ```  
 The builder image can also be created using the *make* command if a *Makefile* is included.  
 
@@ -71,8 +71,7 @@ Once the image has finished building, the command `s2i usage vyogotech/frappe:s2
 #### Testing the Builder Image  
 The builder image can be tested using the following commands:  
 ```
-docker build -t vyogotech/frappe:s2i-base-candidate .
-IMAGE_NAME=vyogotech/frappe:s2i-base-candidate test/run
+make test
 ```  
 The builder image can also be tested using the *make test* command if a *Makefile* is included.  
 
@@ -83,6 +82,7 @@ The following command will create the application image:
 s2i build test/test-app vyogotech/frappe:s2i-base vyogotech/frappe:s2i-base-app
 ---> Building and installing application from source...
 ```  
+Using the logic defined in the *assemble* script, S2I will now create an application image using the builder image as a base and including the source code from the `test/test
 Using the logic defined in the *assemble* script, S2I will now create an application image using the builder image as a base and including the source code from the `test/test-app` directory.  
 
 #### Running the Application Image  
