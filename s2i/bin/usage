@@ -1,0 +1,21 @@
+#!/bin/bash -e
+cat <<EOF
+This is the vyogotech/frappe:s2i-base S2I image:
+To use it, install S2I: https://github.com/openshift/source-to-image
+
+Sample invocation:
+
+s2i build <source code path/URL> vyogotech/frappe:s2i-base my-app:latest
+
+
+if you're using podman then:
+
+./s2i-podman.sh source code path/URL> my-app:latest localhost/vyogotech/frappe:s2i-base
+
+
+You can then run the resulting image via:
+podman run <application image>
+(OR)
+docker run <application image>
+
+EOF

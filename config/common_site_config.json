@@ -1,0 +1,6 @@
+{
+    "redis_cache": "redis://localhost:6379",
+    "redis_queue": "redis://localhost:6379",
+    "redis_socketio": "redis://localhost:6379",
+    "socketio_port": 9000
+}

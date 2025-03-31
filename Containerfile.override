@@ -1,0 +1,8 @@
+FROM vyogotech/frappe:s2i-base
+USER root
+#copy S2I scripts
+#USE THIS TO OVERWRITE THE S2I SCRIPTS OR EXTEND THEM
+#COPY ./s2i/bin/ /usr/libexec/s2i
+#Add additional instructions
+EXPOSE 8000
+USER 1001

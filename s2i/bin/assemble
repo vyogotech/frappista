@@ -1,0 +1,247 @@
+#!/bin/bash -e
+set -e
+# Log function for consistent logging
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] $1"
+}
+
+# Function to start MariaDB service
+start_mariadb() {
+    log "Starting MariaDB service."
+    run-mysqld &
+    log "MariaDB service started."
+}
+
+# Function to wait for MariaDB to be ready
+wait_for_mariadb() {
+    log "Waiting for MariaDB to be ready..."
+    until mysqladmin ping &>/dev/null; do
+        echo "MariaDB is not ready yet. Retrying in 2 seconds..."
+        sleep 2
+    done
+    log "MariaDB is ready."
+}
+
+# Function to run secure installation
+run_secure_installation() {
+    log "Securing MySQL/MariaDB directly."
+    mysqladmin -u root password "$MYSQL_ROOT_PASSWORD" || mysqladmin -u root -p'' password "$MYSQL_ROOT_PASSWORD" || true
+    mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
+    DELETE FROM mysql.user WHERE User=''; 
+EOF
+    mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
+    ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+    ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+    FLUSH PRIVILEGES;
+EOF
+    log "MySQL/MariaDB secured."
+}
+
+# Function to create a new site
+create_site() {
+    local site_name=$1
+    local admin_password=$2
+    log "Creating new site: $site_name..."
+    bench new-site "$site_name" \
+        --admin-password "$admin_password" \
+        --mariadb-root-password "$MYSQL_ROOT_PASSWORD" \
+        --mariadb-user-host-login-scope='%'
+    
+log "Installing apps to site: $site_name..."
+
+# Use find instead of ls to handle spaces in directory names
+apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+
+if [[ ${#apps_list[@]} -gt 0 ]]; then
+    for app in "${apps_list[@]}"; do
+        app_name=$(basename "$app")
+        log "Installing $app_name to $site_name..."
+        bench --site "$site_name" install-app "$app_name"
+    done
+else
+    log "No apps found to install (excluding frappe)."
+fi
+    log "Setting $site_name as default site..."
+    bench use "$site_name"
+}
+
+if [[ "$1" == "-h" ]]; then
+    exec /usr/libexec/s2i/usage
+fi
+
+# Restore artifacts from the previous build
+if [ "$(ls /tmp/artifacts/ 2>/dev/null)" ]; then
+    log "Restoring build artifacts..."
+    mv /tmp/artifacts/. ./
+fi
+
+log "Installing application source..."
+ls -lrt /tmp/src
+# cp -Rf /tmp/src/. ./
+log "Current directory: $(pwd)"
+#check if a custom frappe app also exists
+# package.json should exists in the root and hooks.py under one folder below
+#if found, copy the folder to apps/ directory 
+IS_CUSTOM_APP=false
+CUSTOM_APP_NAME=""
+
+get_app_name() {
+  local src_path="/tmp/src"
+  local app_name=""
+  
+  # If we have exactly one directory in /tmp/src, check if it's a Frappe app
+  if [ $(find ${src_path} -maxdepth 1 -type d | wc -l) -eq 2 ]; then
+    # Get the directory name (excluding /tmp/src itself)
+    subdir=$(find ${src_path} -maxdepth 1 -type d -not -path "${src_path}" -printf "%f\n")
+    
+    # Check if this is a Frappe app by looking for standard files in the subdirectory
+    # First check if hooks.py exists
+    if [[ -f "${src_path}/${subdir}/hooks.py" ]]; then
+      app_name=$subdir
+    # If no hooks.py, check if there's an app name in pyproject.toml
+    elif [[ -f "${src_path}/${subdir}/pyproject.toml" ]]; then
+      app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/${subdir}/pyproject.toml" 2>/dev/null)
+    # Finally check package.json
+    elif [[ -f "${src_path}/${subdir}/package.json" ]]; then
+      app_name=$(jq -r '.name' "${src_path}/${subdir}/package.json" 2>/dev/null)
+    fi
+    
+    # If still no app name found but the directory exists, use the directory name
+    if [[ -z "$app_name" && -n "$subdir" ]]; then
+      app_name=$subdir
+    fi
+  else
+    # Standard checks for app name in the root of /tmp/src
+    if [[ -f "${src_path}/pyproject.toml" ]]; then
+      app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/pyproject.toml" 2>/dev/null)
+    elif [[ -f "${src_path}/package.json" ]]; then
+      app_name=$(jq -r '.name' "${src_path}/package.json" 2>/dev/null)
+    elif [[ -f "${src_path}/hooks.py" ]]; then
+      app_name=$(grep -oP '(?<=app_name = ")[^"]*' "${src_path}/hooks.py" 2>/dev/null)
+    fi
+    
+    # Check for app_name in any hooks.py files
+    if [[ -z "$app_name" ]]; then
+      for hooks_file in ${src_path}/*/hooks.py; do
+        if [[ -f "$hooks_file" ]]; then
+          dir_name=$(dirname "$hooks_file" | xargs basename)
+          app_name=$(grep -oP '(?<=app_name = ")[^"]*' "$hooks_file" 2>/dev/null || echo "$dir_name")
+          if [[ ! -z "$app_name" ]]; then
+            break
+          fi
+        fi
+      done
+    fi
+  fi
+
+  echo "$app_name"
+}
+
+
+
+# Example usage:
+log "Custom app detection..."
+app_name=$(get_app_name)
+
+if [[ -z "$app_name" ]]; then
+  log "[ERROR] No app name found in /tmp/src (or its subdirectories) pyproject.toml, package.json, or hooks.py. Exiting..."
+  exit 0 # Or exit 1, depending on context
+else
+  log "Custom app name found: $app_name"
+fi
+
+# Example usage:
+log "Custom app detected."
+app_name=$(get_app_name)
+
+if [[ -z "$app_name" ]]; then
+  log "[ERROR] No app name found in pyproject.toml, package.json, or hooks.py. Exiting..."
+  log "skipping custom app setup..."
+else
+  log "Custom app name found: $app_name"
+fi
+
+if [[ -n "$app_name" ]]; then
+    log "Custom app detected."
+    app_name=$(get_app_name)
+    CUSTOM_APP_NAME=$app_name
+    IS_CUSTOM_APP=true
+    log "Copying custom app $app_name to apps/ directory..."
+  # Check if we're working with a subdirectory
+    if [[ -d "/tmp/src/$app_name" ]]; then
+      mkdir -p "./apps/$app_name"
+      cp -Rf "/tmp/src/"* "./apps/$app_name/"
+    fi
+    #updates apps.txt 
+    ls -1 /home/frappe/frappe-bench/apps > sites/apps.txt
+    log "Bench app directory: $(ls -1 /home/frappe/frappe-bench/apps)"
+    log "Bench app directory: $(ls -lrt /home/frappe/frappe-bench/apps/$app_name)"
+    
+    log "Setting up custom app $app_name..."
+    env/bin/python3 -m pip install -e ./apps/${CUSTOM_APP_NAME} && ls -1 /home/frappe/frappe-bench/apps > sites/apps.txt
+    log "Building assets for custom app $app_name..."
+    bench build --production
+    
+    # Remove git directories to reduce size
+    cd /home/frappe/frappe-bench && find apps/${CUSTOM_APP_NAME} -mindepth 1 -path "*/.git" | xargs rm -fr 2>/dev/null  
+     log "Custom app $app_name setup completed."   
+fi
+
+fix-permissions ./
+start_mariadb
+wait_for_mariadb
+run_secure_installation
+
+log "MariaDB secure installation completed. Setting up Frappe components..."
+
+if [[ -f bench-config.json ]]; then
+    log "Setting up Frappe bench in current directory..."
+    bench init --frappe-path . --frappe-branch $(jq -r '.branch' bench-config.json) \
+        --python $(which python3) $(jq -r '.bench_name' bench-config.json)
+    bench_dir=$(jq -r '.bench_name' bench-config.json)
+else
+    log "Using default bench directory: /home/frappe/frappe-bench"
+    bench_dir="/home/frappe/frappe-bench"
+fi
+
+cd "$bench_dir"
+
+if [[ -f apps.json ]]; then
+    log "Installing Frappe apps..."
+    jq -c '.[]' apps.json | while read app; do
+        app_name=$(echo $app | jq -r '.name')
+        app_url=$(echo $app | jq -r '.url')
+        app_branch=$(echo $app | jq -r '.branch')
+        if [[ -z "$app_name" || -z "$app_url" || -z "$app_branch" ]]; then
+            log "[ERROR] Missing app details in apps.json. Skipping..."
+            continue
+        fi
+        log "Installing $app_name from $app_url ($app_branch)..."
+        if ! bench get-app "$app_name" "$app_url" --branch "$app_branch"; then
+            log "[ERROR] Failed to install $app_name from $app_url ($app_branch). Skipping..."
+            continue
+        fi
+    done
+fi
+
+if [[ -f site-config.json ]]; then
+    site_name=$(jq -r '.site_name' ../site-config.json)
+    admin_password=$(jq -r '.admin_password' ../site-config.json)
+    create_site "$site_name" "$admin_password"
+else
+    site_name="dev.localhost"
+    log "site-config.json not found. Using default site: $site_name..."
+    if ! bench --site "$site_name" show-config >/dev/null 2>&1; then
+        create_site "$site_name" "admin"
+    else
+        log "Default site $site_name already exists. Skipping creation..."
+    fi
+fi
+
+bench set-config --global redis_cache "redis://localhost:6379"
+bench set-config --global redis_queue "redis://localhost:6379"
+bench set-config --global redis_socketio "redis://localhost:6379"
+
+log "Fixing permissions..."
+fix-permissions ./
+log "Assemble completed successfully."
