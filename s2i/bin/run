@@ -72,6 +72,24 @@ cleanup() {
 # Register cleanup function for graceful shutdown
 trap cleanup SIGINT SIGTERM
 
+#This section will handle the local compose when app is just mounted
+# Let's to register the apps that are under /apps but not in apps.txt
+log "Registering apps..."
+cd /home/frappe/frappe-bench
+apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+apps_in_txt=($(cat sites/apps.txt))
+for app in "${apps_list[@]}"; do
+  app_name=$(basename "$app")
+  if [[ ! " ${apps_in_txt[@]} " =~ " ${app_name} " ]]; then
+    echo "$app_name" >> apps.txt
+    env/bin/python3 -m pip install -e "./apps/${app_name}"    
+    log "Building assets for custom app $app_name..."
+    log "Registered app: $app_name"
+  else
+    log "App $app_name already registered."
+  fi
+done
+log "All apps registered."
 # Start Frappe/ERPNext with bench in foreground
 log "Starting Frappe/ERPNext with bench..."
 bench start

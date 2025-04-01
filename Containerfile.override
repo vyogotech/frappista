@@ -1,8 +1,11 @@
-FROM vyogotech/frappe:s2i-base
+FROM vyogo/frappe:s2i-base
 USER root
+RUN touch /help.1 && echo "$STI_SCRIPTS_PATH"
 #copy S2I scripts
 #USE THIS TO OVERWRITE THE S2I SCRIPTS OR EXTEND THEM
-#COPY ./s2i/bin/ /usr/libexec/s2i
+COPY --chown=1001:0 ./s2i/bin/* $STI_SCRIPTS_PATH
+RUN grep "apps.json" $STI_SCRIPTS_PATH/assemble 
+
 #Add additional instructions
 EXPOSE 8000
 USER 1001

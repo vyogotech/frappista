@@ -1,43 +1,88 @@
 #!/bin/bash
 set -e
+echo "[DEBUG] Script started."
 
-if [ $# -lt 2 ]; then
-    echo "usage: $0 <src-dir> <img-tag> [ <s2i-args> ... ]"
-    exit 1
+# Display usage information if the number of arguments is less than 3
+if [ $# -lt 3 ]; then
+  echo "[ERROR] usage: $0 <src-dir> <img-tag> <builder-img> [ <s2i-args> ... ]"
+  echo ""
+  echo "Parameters:"
+  echo " <src-dir> : Path to the source directory containing the application code."
+  echo " <img-tag> : Tag for the resulting container image."
+  echo " <builder-img> : The S2I builder image to use."
+  echo " <s2i-args> : (Optional) Additional arguments to pass to the s2i build command."
+  exit 1
 fi
 
 fail() {
-    echo $1
-    exit 1
+  echo "[ERROR] $1"
+  exit 1
 }
 
 srcdir=$1
 shift
 [ -d "$srcdir" ] || fail "$srcdir not a directory"
+echo "[DEBUG] Source directory: $srcdir"
+
 buildtag=$1
 shift
+echo "[DEBUG] Build tag: $buildtag"
+
+builder=$1
+shift
+[ -n "$builder" ] || fail "Builder image must be specified"
+echo "[DEBUG] Builder image: $builder"
 
 origdir=$(pwd)
+echo "[DEBUG] Original directory: $origdir"
+
+# Get absolute path to source directory
 cd $srcdir
 srcdir=$(pwd)
+cd $origdir
+echo "[DEBUG] Absolute source directory: $srcdir"
 
+# Create build directory
 blddir=$(mktemp -d -t s2i-XXXX)
 [ -d "$blddir" ] || fail "$blddir not a directory"
-docker=$(mktemp -t dockerfile-XXXX)
-[ -f "$docker" ] || fail "$docker not a filename"
+echo "[DEBUG] Build directory: $blddir"
 
-echo "building in directory $blddir"
+dockerfile=$(mktemp -t dockerfile-XXXX)
+[ -f "$dockerfile" ] || fail "$dockerfile not a filename"
+echo "[DEBUG] Dockerfile path: $dockerfile"
+
+echo "[INFO] Building in directory $blddir"
+
+# Change to build directory
 cd $blddir
 
-# build using --as-dockerfile, to create an intermediate dockerfile
-# that podman can then build
-s2i build . "$@" --as-dockerfile $docker
+# Debug: Check if builder image exists
+echo "[DEBUG] Checking if builder image exists:"
+podman images | grep "$builder" || echo "Builder image not found!"
 
-# the resulting dockerfile expects all src to be staged
-# under directory 'upload/src' in the build dir
+# Debug: Check source directory content
+echo "[DEBUG] Checking source directory content:"
+find "$srcdir" -type f | head -n 10
+
+# Run s2i build with the specified builder image
+echo "[INFO] Running s2i build to generate Dockerfile."
+s2i build "$srcdir" "$builder" "$@" --as-dockerfile $dockerfile
+
+# Create upload/src directory and copy source files
 mkdir -p upload/src
+echo "[INFO] Copying source files to upload/src"
 cp -r ${srcdir}/* upload/src/
-podman build -t $buildtag -f $docker .
+echo "[DEBUG] Source directory content after copy:"
+ls -la upload/src/
 
+# Show the generated Dockerfile for debugging
+echo "[DEBUG] Generated Dockerfile content:"
+cat $dockerfile
+
+echo "[INFO] Running podman build."
+podman build -t $buildtag -f $dockerfile . --no-cache
+
+echo "[INFO] Cleaning up temporary files."
 cd $origdir
-rm -rf $blddir $docker
+rm -rf $blddir $dockerfile
+echo "[DEBUG] Script completed."
