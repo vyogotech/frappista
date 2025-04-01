@@ -34,11 +34,18 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Install Podman
+      - name: Install Podman and S2I
         run: |
+          # Install Podman
           sudo apt-get update
           sudo apt-get install -y podman
           podman --version
+          
+          # Install S2I binary
+          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
+          tar -xvf source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
+          sudo mv s2i /usr/local/bin/
+          s2i version
 
       - name: Install QEMU for multi-arch support
         run: |
