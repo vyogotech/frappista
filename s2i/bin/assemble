@@ -39,6 +39,9 @@ EOF
 
 # Function to create a new site
 create_site() {
+    local prev_pwd=$(pwd)
+    cd /home/frappe/frappe-bench
+    log "Creating new site..."
     local site_name=$1
     local admin_password=$2
     log "Creating new site: $site_name..."
@@ -47,27 +50,87 @@ create_site() {
         --mariadb-root-password "$MYSQL_ROOT_PASSWORD" \
         --mariadb-user-host-login-scope='%'
     
-log "Installing apps to site: $site_name..."
+    log "Installing apps to site: $site_name..."
 
-# Use find instead of ls to handle spaces in directory names
-apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+    # Use find instead of ls to handle spaces in directory names
+    apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
 
-if [[ ${#apps_list[@]} -gt 0 ]]; then
-    for app in "${apps_list[@]}"; do
-        app_name=$(basename "$app")
-        log "Installing $app_name to $site_name..."
-        bench --site "$site_name" install-app "$app_name"
-    done
-else
-    log "No apps found to install (excluding frappe)."
-fi
+    if [[ ${#apps_list[@]} -gt 0 ]]; then
+        for app in "${apps_list[@]}"; do
+            app_name=$(basename "$app")
+            log "Installing $app_name to $site_name..."
+            bench --site "$site_name" install-app "$app_name"
+        done
+    else
+        log "No apps found to install (excluding frappe)."
+    fi
+    
     log "Setting $site_name as default site..."
     bench use "$site_name"
+    cd "$prev_pwd"
 }
 
+# Function to detect app name from source
+get_app_name() {
+    local src_path="/tmp/src"
+    local app_name=""
+    
+    # If we have exactly one directory in /tmp/src, check if it's a Frappe app
+    if [ $(find ${src_path} -maxdepth 1 -type d | wc -l) -eq 2 ]; then
+      # Get the directory name (excluding /tmp/src itself)
+      subdir=$(find ${src_path} -maxdepth 1 -type d -not -path "${src_path}" -printf "%f\n")
+      
+      # Check if this is a Frappe app by looking for standard files in the subdirectory
+      # First check if hooks.py exists
+      if [[ -f "${src_path}/${subdir}/hooks.py" ]]; then
+        app_name=$subdir
+      # If no hooks.py, check if there's an app name in pyproject.toml
+      elif [[ -f "${src_path}/${subdir}/pyproject.toml" ]]; then
+        app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/${subdir}/pyproject.toml" 2>/dev/null)
+      # Finally check package.json
+      elif [[ -f "${src_path}/${subdir}/package.json" ]]; then
+        app_name=$(jq -r '.name' "${src_path}/${subdir}/package.json" 2>/dev/null)
+      fi
+      
+      # If still no app name found but the directory exists, use the directory name
+      if [[ -z "$app_name" && -n "$subdir" ]]; then
+        app_name=$subdir
+      fi
+    else
+      # Standard checks for app name in the root of /tmp/src
+      if [[ -f "${src_path}/pyproject.toml" ]]; then
+        app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/pyproject.toml" 2>/dev/null)
+      elif [[ -f "${src_path}/package.json" ]]; then
+        app_name=$(jq -r '.name' "${src_path}/package.json" 2>/dev/null)
+      elif [[ -f "${src_path}/hooks.py" ]]; then
+        app_name=$(grep -oP '(?<=app_name = ")[^"]*' "${src_path}/hooks.py" 2>/dev/null)
+      fi
+      
+      # Check for app_name in any hooks.py files
+      if [[ -z "$app_name" ]]; then
+        for hooks_file in ${src_path}/*/hooks.py; do
+          if [[ -f "$hooks_file" ]]; then
+            dir_name=$(dirname "$hooks_file" | xargs basename)
+            app_name=$(grep -oP '(?<=app_name = ")[^"]*' "$hooks_file" 2>/dev/null || echo "$dir_name")
+            if [[ ! -z "$app_name" ]]; then
+              break
+            fi
+          fi
+        done
+      fi
+    fi
+
+    echo "$app_name"
+}
+
+# Start of main script
 if [[ "$1" == "-h" ]]; then
     exec /usr/libexec/s2i/usage
 fi
+
+# Record initial directory
+WORKDIR=$(pwd)
+log "Starting assemble script in directory: $WORKDIR"
 
 # Restore artifacts from the previous build
 if [ "$(ls /tmp/artifacts/ 2>/dev/null)" ]; then
@@ -76,139 +139,52 @@ if [ "$(ls /tmp/artifacts/ 2>/dev/null)" ]; then
 fi
 
 log "Installing application source..."
-ls -lrt /tmp/src
-# cp -Rf /tmp/src/. ./
-log "Current directory: $(pwd)"
-#check if a custom frappe app also exists
-# package.json should exists in the root and hooks.py under one folder below
-#if found, copy the folder to apps/ directory 
-IS_CUSTOM_APP=false
-CUSTOM_APP_NAME=""
+log "Source directory content: $(ls -la /tmp/src)"
 
-get_app_name() {
-  local src_path="/tmp/src"
-  local app_name=""
-  
-  # If we have exactly one directory in /tmp/src, check if it's a Frappe app
-  if [ $(find ${src_path} -maxdepth 1 -type d | wc -l) -eq 2 ]; then
-    # Get the directory name (excluding /tmp/src itself)
-    subdir=$(find ${src_path} -maxdepth 1 -type d -not -path "${src_path}" -printf "%f\n")
-    
-    # Check if this is a Frappe app by looking for standard files in the subdirectory
-    # First check if hooks.py exists
-    if [[ -f "${src_path}/${subdir}/hooks.py" ]]; then
-      app_name=$subdir
-    # If no hooks.py, check if there's an app name in pyproject.toml
-    elif [[ -f "${src_path}/${subdir}/pyproject.toml" ]]; then
-      app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/${subdir}/pyproject.toml" 2>/dev/null)
-    # Finally check package.json
-    elif [[ -f "${src_path}/${subdir}/package.json" ]]; then
-      app_name=$(jq -r '.name' "${src_path}/${subdir}/package.json" 2>/dev/null)
-    fi
-    
-    # If still no app name found but the directory exists, use the directory name
-    if [[ -z "$app_name" && -n "$subdir" ]]; then
-      app_name=$subdir
-    fi
-  else
-    # Standard checks for app name in the root of /tmp/src
-    if [[ -f "${src_path}/pyproject.toml" ]]; then
-      app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/pyproject.toml" 2>/dev/null)
-    elif [[ -f "${src_path}/package.json" ]]; then
-      app_name=$(jq -r '.name' "${src_path}/package.json" 2>/dev/null)
-    elif [[ -f "${src_path}/hooks.py" ]]; then
-      app_name=$(grep -oP '(?<=app_name = ")[^"]*' "${src_path}/hooks.py" 2>/dev/null)
-    fi
-    
-    # Check for app_name in any hooks.py files
-    if [[ -z "$app_name" ]]; then
-      for hooks_file in ${src_path}/*/hooks.py; do
-        if [[ -f "$hooks_file" ]]; then
-          dir_name=$(dirname "$hooks_file" | xargs basename)
-          app_name=$(grep -oP '(?<=app_name = ")[^"]*' "$hooks_file" 2>/dev/null || echo "$dir_name")
-          if [[ ! -z "$app_name" ]]; then
-            break
-          fi
-        fi
-      done
-    fi
-  fi
-
-  echo "$app_name"
-}
-
-
-
-# Example usage:
-log "Custom app detection..."
-app_name=$(get_app_name)
-
-if [[ -z "$app_name" ]]; then
-  log "[ERROR] No app name found in /tmp/src (or its subdirectories) pyproject.toml, package.json, or hooks.py. Exiting..."
-  exit 0 # Or exit 1, depending on context
-else
-  log "Custom app name found: $app_name"
-fi
-
-# Example usage:
-log "Custom app detected."
-app_name=$(get_app_name)
-
-if [[ -z "$app_name" ]]; then
-  log "[ERROR] No app name found in pyproject.toml, package.json, or hooks.py. Exiting..."
-  log "skipping custom app setup..."
-else
-  log "Custom app name found: $app_name"
-fi
-
-if [[ -n "$app_name" ]]; then
-    log "Custom app detected."
-    app_name=$(get_app_name)
-    CUSTOM_APP_NAME=$app_name
-    IS_CUSTOM_APP=true
-    log "Copying custom app $app_name to apps/ directory..."
-  # Check if we're working with a subdirectory
-    if [[ -d "/tmp/src/$app_name" ]]; then
-      mkdir -p "./apps/$app_name"
-      cp -Rf "/tmp/src/"* "./apps/$app_name/"
-    fi
-    #updates apps.txt 
-    ls -1 /home/frappe/frappe-bench/apps > sites/apps.txt
-    log "Bench app directory: $(ls -1 /home/frappe/frappe-bench/apps)"
-    log "Bench app directory: $(ls -lrt /home/frappe/frappe-bench/apps/$app_name)"
-    
-    log "Setting up custom app $app_name..."
-    env/bin/python3 -m pip install -e ./apps/${CUSTOM_APP_NAME} && ls -1 /home/frappe/frappe-bench/apps > sites/apps.txt
-    log "Building assets for custom app $app_name..."
-    bench build --production
-    
-    # Remove git directories to reduce size
-    cd /home/frappe/frappe-bench && find apps/${CUSTOM_APP_NAME} -mindepth 1 -path "*/.git" | xargs rm -fr 2>/dev/null  
-     log "Custom app $app_name setup completed."   
-fi
-
-fix-permissions ./
+# Start MariaDB service early
+log "---Setting up environment for app installation------"
 start_mariadb
 wait_for_mariadb
-run_secure_installation
+if [[ ! -f /var/.secure_installation_done ]]; then
+  run_secure_installation
+  touch /var/.secure_installation_done
+  log "Secure installation completed and marked as done."
+else
+  log "Secure installation already completed. Skipping..."
+fi
 
 log "MariaDB secure installation completed. Setting up Frappe components..."
 
-if [[ -f bench-config.json ]]; then
-    log "Setting up Frappe bench in current directory..."
-    bench init --frappe-path . --frappe-branch $(jq -r '.branch' bench-config.json) \
-        --python $(which python3) $(jq -r '.bench_name' bench-config.json)
-    bench_dir=$(jq -r '.bench_name' bench-config.json)
+# Custom app detection
+log "Custom app detection..."
+app_name=$(get_app_name)
+
+# Set bench directory
+if [[ -f /tmp/src/bench-config.json ]]; then
+    log "Setting up Frappe bench using bench-config.json..."
+    bench_name=$(jq -r '.bench_name' /tmp/src/bench-config.json)
+    branch=$(jq -r '.branch' /tmp/src/bench-config.json)
+    
+    # Ensure we're in the right directory before init
+    cd /home/frappe
+    bench init --frappe-path . --frappe-branch "$branch" \
+        --python $(which python3) "$bench_name"
+    bench_dir="/home/frappe/$bench_name"
 else
     log "Using default bench directory: /home/frappe/frappe-bench"
     bench_dir="/home/frappe/frappe-bench"
 fi
 
+# Configure Redis
 cd "$bench_dir"
+bench set-config --global redis_cache "redis://localhost:6379"
+bench set-config --global redis_queue "redis://localhost:6379"
+bench set-config --global redis_socketio "redis://localhost:6379"
 
-if [[ -f apps.json ]]; then
-    log "Installing Frappe apps..."
-    jq -c '.[]' apps.json | while read app; do
+# Handle apps.json if it exists in source
+if [[ -f /tmp/src/apps.json ]]; then
+    log "Installing Frappe apps from apps.json..."
+    jq -c '.[]' /tmp/src/apps.json | while read app; do
         app_name=$(echo $app | jq -r '.name')
         app_url=$(echo $app | jq -r '.url')
         app_branch=$(echo $app | jq -r '.branch')
@@ -224,9 +200,51 @@ if [[ -f apps.json ]]; then
     done
 fi
 
-if [[ -f site-config.json ]]; then
-    site_name=$(jq -r '.site_name' ../site-config.json)
-    admin_password=$(jq -r '.admin_password' ../site-config.json)
+# Handle custom app if detected
+if [[ -z "$app_name" ]]; then
+    log "No custom app detected in source. Skipping custom app setup..."
+else
+    log "Custom app detected: $app_name"
+    IS_CUSTOM_APP=true
+    CUSTOM_APP_NAME=$app_name
+    
+    log "Setting up apps directory if needed..."
+    mkdir -p "$bench_dir/apps"
+    
+    log "Copying custom app $app_name to apps/ directory..."
+    # Check if we're working with a subdirectory
+    if [[ -d "/tmp/src/$app_name" ]]; then
+        mkdir -p "$bench_dir/apps/$app_name"
+        cp -Rf "/tmp/src/$app_name/"* "$bench_dir/apps/$app_name/"
+    else
+        # We're working with files in the root of /tmp/src
+        mkdir -p "$bench_dir/apps/$app_name"
+        cp -Rf /tmp/src/* "$bench_dir/apps/$app_name/"
+    fi
+    
+    log "Updating apps.txt..."
+    cd "$bench_dir"
+    ls -1 "$bench_dir/apps" > "$bench_dir/sites/apps.txt"
+    log "Bench app directory content: $(ls -la $bench_dir/apps)"
+    log "Custom app content: $(ls -la $bench_dir/apps/$app_name)"
+    
+    log "Installing custom app $app_name as development package..."
+    cd "$bench_dir"
+    env/bin/python3 -m pip install -e "./apps/${CUSTOM_APP_NAME}"
+    
+    log "Building assets for custom app $app_name..."
+    bench build --production
+    
+    # Remove git directories to reduce size
+    find "$bench_dir/apps/${CUSTOM_APP_NAME}" -name .git -type d -exec rm -rf {} + 2>/dev/null || true
+    log "Custom app $app_name setup completed."
+fi
+
+# Site creation
+cd "$bench_dir"
+if [[ -f /tmp/src/site-config.json ]]; then
+    site_name=$(jq -r '.site_name' /tmp/src/site-config.json)
+    admin_password=$(jq -r '.admin_password' /tmp/src/site-config.json)
     create_site "$site_name" "$admin_password"
 else
     site_name="dev.localhost"
@@ -238,10 +256,9 @@ else
     fi
 fi
 
-bench set-config --global redis_cache "redis://localhost:6379"
-bench set-config --global redis_queue "redis://localhost:6379"
-bench set-config --global redis_socketio "redis://localhost:6379"
-
 log "Fixing permissions..."
-fix-permissions ./
+
+
+# Return to initial directory
+cd "$WORKDIR"
 log "Assemble completed successfully."

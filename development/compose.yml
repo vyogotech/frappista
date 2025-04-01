@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  frappe:
+    image: vyogo/erpnext:sne-latest
+    ports:
+      - "8000:8000"
+    volumes:
+    #Mount your apps under the apps directory. This image will automatically adds its to the bench.
+      - <LOCAL_PATH>/<app_name>:/home/frappe/frappe-bench/apps/<app_name>
