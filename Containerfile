@@ -1,5 +1,5 @@
 # Stage 1: Base image with tools and dependencies
-FROM quay.io/fedora/mariadb-1011 AS builder
+FROM quay.io/sclorg/mariadb-1011-c9s AS builder
 USER root
 
 # Set labels
