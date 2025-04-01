@@ -1,5 +1,5 @@
 # Stage 1: Base image with tools and dependencies
-FROM registry.redhat.io/rhel9/mariadb-1011 AS builder
+FROM quay.io/fedora/mariadb-1011 AS builder
 USER root
 
 # Set labels
