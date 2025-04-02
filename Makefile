@@ -1,9 +1,9 @@
 # Configuration
 REGISTRY=docker.io
 REPO=vyogo
-IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-base
-VERSION?=latest
-ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-latest
+FRAPPE_VERSION?=develop
+IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-$(FRAPPE_VERSION)
+ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-$(FRAPPE_VERSION)
 
 # Default target
 .PHONY: all
@@ -28,23 +28,22 @@ help:
 # Build for current architecture
 .PHONY: build
 build:
-	podman build -t $(IMAGE_NAME) .
+	podman build -t $(IMAGE_NAME) .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for AMD64
 .PHONY: build-amd64
 build-amd64:
-	podman build --arch=amd64 -t $(IMAGE_NAME)-amd64 .
+	podman build --arch=amd64 -t $(IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
-	podman build --arch=arm64 -t $(IMAGE_NAME)-arm64 .
+	podman build --arch=arm64 -t $(IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Push images
 .PHONY: push push-amd64 push-arm64
 push:
-	podman push $(IMAGE_NAME)
-
+	podman push $(IMAGE_NAME) 
 push-amd64: build-amd64
 	podman push $(IMAGE_NAME)-amd64
 
@@ -55,30 +54,30 @@ push-arm64: build-arm64
 .PHONY: remove-manifests
 remove-manifests:
 	podman manifest exists $(IMAGE_NAME) && podman manifest rm $(IMAGE_NAME) || true
-	podman manifest exists $(IMAGE_NAME)-$(VERSION) && podman manifest rm $(IMAGE_NAME)-$(VERSION) || true
+	podman manifest exists $(IMAGE_NAME)-$(FRAPPE_VERSION) && podman manifest rm $(IMAGE_NAME)-$(FRAPPE_VERSION) || true
 
 # Create and push multi-arch manifest
 .PHONY: push-manifest
 push-manifest: push-amd64 push-arm64 remove-manifests
-	podman manifest create $(IMAGE_NAME)-$(VERSION) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
-	podman manifest push --all $(IMAGE_NAME)-$(VERSION) docker://$(IMAGE_NAME)-$(VERSION)
+	podman manifest create $(IMAGE_NAME)-$(FRAPPE_VERSION) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
+	podman manifest push --all $(IMAGE_NAME)-$(FRAPPE_VERSION) docker://$(IMAGE_NAME)-$(FRAPPE_VERSION)
 
 # ERPNext builds
 .PHONY: erpnext erpnext-amd64 erpnext-arm64
 erpnext:
-	./s2i-podman.sh test/erpnext $(ERP_IMAGE_NAME) $(IMAGE_NAME)
+	./s2i-podman.sh test/erpnext $(ERP_IMAGE_NAME) $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/erpnext $(ERP_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64 
+	./s2i-podman.sh --arch amd64 test/erpnext $(ERP_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/erpnext $(ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 
+	./s2i-podman.sh --arch arm64 test/erpnext $(ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove ERPNext manifests
 .PHONY: remove-erpnext-manifests
 remove-erpnext-manifests:
 	podman manifest exists $(ERP_IMAGE_NAME) && podman manifest rm $(ERP_IMAGE_NAME) || true
-	podman manifest exists $(ERP_IMAGE_NAME)-$(VERSION) && podman manifest rm $(ERP_IMAGE_NAME)-$(VERSION) || true
+	podman manifest exists $(ERP_IMAGE_NAME)-$(FRAPPE_VERSION) && podman manifest rm $(ERP_IMAGE_NAME)-$(FRAPPE_VERSION) || true
 
 # Create and push ERPNext multi-arch manifest
 .PHONY: erpnext-manifest
