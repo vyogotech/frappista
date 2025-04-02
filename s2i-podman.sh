@@ -7,7 +7,21 @@ if [ $# -lt 3 ]; then
   echo "[ERROR] usage: $0 <src-dir> <img-tag> <builder-img> [ --arch <arch> ] [ <s2i-args> ... ]"
   exit 1
 fi
+frappe_branch=""
 
+# Check for FRAPPE_BRANCH argument
+for arg in "$@"; do
+  if [[ "$arg" == --frappe-branch=* ]]; then
+    frappe_branch="${arg#*=}"
+    break
+  fi
+done
+
+if [[ -n "$frappe_branch" ]]; then
+  echo "[DEBUG] Frappe branch specified: $frappe_branch"
+else
+  echo "[DEBUG] No Frappe branch specified. Using default."
+fi
 arch=""
 s2i_args=()
 
@@ -54,9 +68,9 @@ ls -la upload/src/
 
 echo "[INFO] Running podman build."
 if [[ -n "$arch" ]]; then
-  podman build --arch "$arch" -t "$buildtag" -f "$dockerfile" .  --no-cache
+  podman build --arch "$arch" -t "$buildtag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
 else
-  podman build -t "$buildtag" -f "$dockerfile" . --no-cache
+  podman build --arch "$arch" -t "$buildtag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
 fi
 
 echo "[DEBUG] Script completed."

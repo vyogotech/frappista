@@ -170,7 +170,7 @@ WORKDIR /home/frappe
 ARG FRAPPE_BRANCH=version-15
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
-RUN bench init \
+RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
   --frappe-branch=${FRAPPE_BRANCH} \
   --frappe-path=${FRAPPE_PATH} \
   --no-backups \
