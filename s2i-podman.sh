@@ -40,24 +40,26 @@ while [[ $# -gt 0 ]]; do
 done
 
 srcdir="${s2i_args[0]}"
-buildtag="${s2i_args[1]}"
+build_tag="${s2i_args[1]}"
 builder="${s2i_args[2]}"
 s2i_args=("${s2i_args[@]:3}")  # Remove first 3 mandatory arguments
-
+#Remove --frappe-branch if present
+s2i_args=("${s2i_args[@]/--frappe-branch=*}")
 [ -d "$srcdir" ] || { echo "[ERROR] $srcdir is not a directory"; exit 1; }
 
 echo "[DEBUG] Source directory: $srcdir"
-echo "[DEBUG] Build tag: $buildtag"
+echo "[DEBUG] Build tag: $build_tag"
 echo "[DEBUG] Builder image: $builder"
 echo "[DEBUG] Architecture: ${arch:-default}"
 
-blddir=$(mktemp -d -t s2i-XXXX)
+build_dir=$(mktemp -d -t s2i-XXXX)
 dockerfile=$(mktemp -t dockerfile-XXXX)
 
-trap 'rm -rf "$blddir" "$dockerfile"' EXIT  # Cleanup on exit
+trap 'rm -rf "$build_dir" "$dockerfile"' EXIT  # Cleanup on exit
 
 echo "[INFO] Running s2i build to generate Dockerfile."
-s2i build "$srcdir" "$builder" "${s2i_args[@]}" --as-dockerfile "$dockerfile"
+s2i build "$srcdir" "$builder" "${s2i_args[@]}" --as-dockerfile "$dockerfile" || { echo "[ERROR] s2i build failed"; exit 1; }
+# Note: --frappe-branch is not passed to s2i build as it is not a valid flag.
 
 # Create upload/src directory and copy source files
 mkdir -p upload/src
@@ -68,9 +70,9 @@ ls -la upload/src/
 
 echo "[INFO] Running podman build."
 if [[ -n "$arch" ]]; then
-  podman build --arch "$arch" -t "$buildtag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
+  podman build --arch "$arch" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache || { echo "[ERROR] podman build failed"; exit 1; }
 else
-  podman build --arch "$arch" -t "$buildtag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
+  podman build --arch "$arch" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
 fi
 
 echo "[DEBUG] Script completed."
