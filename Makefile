@@ -65,13 +65,13 @@ push-manifest: push-amd64 push-arm64 remove-manifests
 # ERPNext builds
 .PHONY: erpnext erpnext-amd64 erpnext-arm64
 erpnext:
-	./s2i-podman.sh test/erpnext $(ERP_IMAGE_NAME) $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh test/erpnext-$(FRAPPE_VERSION) $(ERP_IMAGE_NAME) $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/erpnext $(ERP_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch amd64 test/erpnext-$(FRAPPE_VERSION) $(ERP_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/erpnext $(ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch arm64 test/erpnext-$(FRAPPE_VERSION) $(ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove ERPNext manifests
 .PHONY: remove-erpnext-manifests
