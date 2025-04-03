@@ -12,7 +12,8 @@ start_mariadb() {
     log "MariaDB service started."
 }
 
-start_redis{
+start_redis()
+{
     log "Starting Redis server."
     redis-server --daemonize yes --pidfile /tmp/pids/redis.pid
     log "Redis server started."
