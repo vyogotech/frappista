@@ -12,6 +12,20 @@ start_mariadb() {
     log "MariaDB service started."
 }
 
+start_redis{
+    log "Starting Redis server."
+    redis-server --daemonize yes --pidfile /tmp/pids/redis.pid
+    log "Redis server started."
+}
+
+wait_for_redis() {
+    log "Waiting for Redis to be ready..."
+    until redis-cli ping &>/dev/null; do
+        echo "Redis is not ready yet. Retrying in 2 seconds..."
+        sleep 2
+    done
+    log "Redis is ready."
+}
 # Function to wait for MariaDB to be ready
 wait_for_mariadb() {
     log "Waiting for MariaDB to be ready..."
@@ -145,6 +159,9 @@ log "Source directory content: $(ls -la /tmp/src)"
 log "---Setting up environment for app installation------"
 start_mariadb
 wait_for_mariadb
+start_redis
+wait_for_redis
+log "MariaDB and Redis services started successfully."
 if [[ ! -f /var/.secure_installation_done ]]; then
   run_secure_installation
   touch /var/.secure_installation_done
