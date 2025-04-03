@@ -26,6 +26,7 @@ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.n
     ncurses-devel \
     xz-devel \
     libuuid-devel \
+    file \
     mariadb-connector-c-devel && \
     rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/dnf.*
 

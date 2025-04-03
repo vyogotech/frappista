@@ -81,7 +81,6 @@ apps_in_txt=($(cat sites/apps.txt))
 for app in "${apps_list[@]}"; do
   app_name=$(basename "$app")
   if [[ ! " ${apps_in_txt[@]} " =~ " ${app_name} " ]]; then
-    echo "$app_name" >> apps.txt
     env/bin/python3 -m pip install -e "./apps/${app_name}"    
     log "Building assets for custom app $app_name..."
     log "Registered app: $app_name"
@@ -89,6 +88,7 @@ for app in "${apps_list[@]}"; do
     log "App $app_name already registered."
   fi
 done
+ls -1 apps/ > sites/apps.txt
 log "All apps registered."
 # Start Frappe/ERPNext with bench in foreground
 log "Starting Frappe/ERPNext with bench..."
