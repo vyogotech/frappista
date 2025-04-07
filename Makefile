@@ -98,32 +98,51 @@ clean:
 	podman rmi -f $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64 $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64 || true
 
 clean-manifests: remove-manifests remove-erpnext-manifests
-# Frappe CRM builds
-.PHONY: frappe-crm frappe-crm-amd64 frappe-crm-arm64
-frappe-crm:
-	./s2i-podman.sh test/frappe-crm-$(FRAPPE_VERSION) $(IMAGE_NAME)-crm $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+# Frappe CRM builds - modified version
+.PHONY: frappe-crm-develop frappe-crm-develop-amd64 frappe-crm-develop-arm64
+.PHONY: frappe-crm-v1392 frappe-crm-v1392-amd64 frappe-crm-v1392-arm64
+# Frappe CRM builds - modified version
+.PHONY: frappe-crm-develop frappe-crm-develop-amd64 frappe-crm-develop-arm64
+.PHONY: frappe-crm-v1392 frappe-crm-v1392-amd64 frappe-crm-v1392-arm64
 
-frappe-crm-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/frappe-crm-$(FRAPPE_VERSION) $(IMAGE_NAME)-crm-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+# CRM develop version
+frappe-crm-develop:
+    ./s2i-podman.sh test/frappe-crm-develop $(IMAGE_NAME)-crm-develop $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
-frappe-crm-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/frappe-crm-$(FRAPPE_VERSION) $(IMAGE_NAME)-crm-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+frappe-crm-develop-amd64: build-amd64
+    ./s2i-podman.sh --arch amd64 test/frappe-crm-develop $(IMAGE_NAME)-crm-develop-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+
+frappe-crm-develop-arm64: build-arm64
+    ./s2i-podman.sh --arch arm64 test/frappe-crm-develop $(IMAGE_NAME)-crm-develop-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+
+# CRM v1.39.2 version
+frappe-crm-v1392:
+    ./s2i-podman.sh test/frappe-crm-v1.39.2 $(IMAGE_NAME)-crm-v1392 $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+
+frappe-crm-v1392-amd64: build-amd64
+    ./s2i-podman.sh --arch amd64 test/frappe-crm-v1.39.2 $(IMAGE_NAME)-crm-v1392-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+
+frappe-crm-v1392-arm64: build-arm64
+    ./s2i-podman.sh --arch arm64 test/frappe-crm-v1.39.2 $(IMAGE_NAME)-crm-v1392-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove Frappe CRM manifests
 .PHONY: remove-frappe-crm-manifests
 remove-frappe-crm-manifests:
-	podman manifest exists $(IMAGE_NAME)-crm && podman manifest rm $(IMAGE_NAME)-crm || true
-	podman manifest exists $(IMAGE_NAME)-crm-$(FRAPPE_VERSION) && podman manifest rm $(IMAGE_NAME)-crm-$(FRAPPE_VERSION) || true
+    podman manifest exists $(IMAGE_NAME)-crm-develop && podman manifest rm $(IMAGE_NAME)-crm-develop || true
+    podman manifest exists $(IMAGE_NAME)-crm-v1392 && podman manifest rm $(IMAGE_NAME)-crm-v1392 || true
 
-# Create and push Frappe CRM multi-arch manifest
-.PHONY: frappe-crm-manifest
-frappe-crm-manifest: frappe-crm-amd64 frappe-crm-arm64 remove-frappe-crm-manifests push-frappe-crm
+# Create and push Frappe CRM multi-arch manifest for develop
+.PHONY: frappe-crm-develop-manifest
+frappe-crm-develop-manifest: frappe-crm-develop-amd64 frappe-crm-develop-arm64 remove-frappe-crm-manifests
+    podman push $(IMAGE_NAME)-crm-develop-amd64
+    podman push $(IMAGE_NAME)-crm-develop-arm64
+    podman manifest create $(IMAGE_NAME)-crm-develop $(IMAGE_NAME)-crm-develop-amd64 $(IMAGE_NAME)-crm-develop-arm64
+    podman manifest push --all $(IMAGE_NAME)-crm-develop docker://$(IMAGE_NAME)-crm-develop
 
-# Push Frappe CRM images
-.PHONY: push-frappe-crm
-push-frappe-crm:
-	podman push $(IMAGE_NAME)-crm-amd64
-	podman push $(IMAGE_NAME)-crm-arm64
-
-	podman manifest create $(IMAGE_NAME)-crm $(IMAGE_NAME)-crm-amd64 $(IMAGE_NAME)-crm-arm64
-	podman manifest push --all $(IMAGE_NAME)-crm docker://$(IMAGE_NAME)-crm
+# Create and push Frappe CRM multi-arch manifest for v1.39.2
+.PHONY: frappe-crm-v1392-manifest
+frappe-crm-v1392-manifest: frappe-crm-v1392-amd64 frappe-crm-v1392-arm64 remove-frappe-crm-manifests
+    podman push $(IMAGE_NAME)-crm-v1392-amd64
+    podman push $(IMAGE_NAME)-crm-v1392-arm64
+    podman manifest create $(IMAGE_NAME)-crm-v1392 $(IMAGE_NAME)-crm-v1392-amd64 $(IMAGE_NAME)-crm-v1392-arm64
+    podman manifest push --all $(IMAGE_NAME)-crm-v1392 docker://$(IMAGE_NAME)-crm-v1392
