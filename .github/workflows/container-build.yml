@@ -127,7 +127,10 @@ jobs:
           sudo apt-get install -y podman qemu-user-static
           echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
           sudo systemctl restart podman || true
-
+          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
+          sudo mv s2i-temp/s2i /usr/local/bin/
+          rm -rf s2i-temp source-to-image-*.tar.gz
       # Build ERPNext with Frappe develop
       - name: Build ERPNext (Frappe develop) - AMD64
         run: make erpnext-amd64 FRAPPE_VERSION=develop
@@ -167,7 +170,11 @@ jobs:
           sudo apt-get install -y podman qemu-user-static
           echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
           sudo systemctl restart podman || true
-
+          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
+          sudo mv s2i-temp/s2i /usr/local/bin/
+          rm -rf s2i-temp source-to-image-*.tar.gz
+          
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         run: |
