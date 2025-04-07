@@ -31,8 +31,8 @@ jobs:
     outputs:
       version: ${{ steps.vars.outputs.VERSION }}
       components: ${{ steps.components.outputs.COMPONENTS }}
-      frappe_versions: ${{ steps.frappe-versions.outputs.FRAPPE_VERSIONS }}
-      crm_versions: ${{ steps.crm-versions.outputs.CRM_VERSIONS }}
+      matrix_frappe: ${{ steps.create-matrix.outputs.matrix_frappe }}
+      matrix_crm: ${{ steps.create-matrix.outputs.matrix_crm }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,25 +60,36 @@ jobs:
           fi
           echo "COMPONENTS=${COMPONENTS}" >> $GITHUB_OUTPUT
       
-      - name: Parse Frappe versions
-        id: frappe-versions
+      - name: Create matrix
+        id: create-matrix
         run: |
+          # Parse Frappe versions
           if [[ "${{ github.event.inputs.frappe_version }}" != "" ]]; then
             FRAPPE_VERSIONS="${{ github.event.inputs.frappe_version }}"
           else
             FRAPPE_VERSIONS="develop,version-15"
           fi
-          echo "FRAPPE_VERSIONS=${FRAPPE_VERSIONS}" >> $GITHUB_OUTPUT
           
-      - name: Parse CRM versions
-        id: crm-versions
-        run: |
+          # Parse CRM versions
           if [[ "${{ github.event.inputs.crm_version }}" != "" ]]; then
             CRM_VERSIONS="${{ github.event.inputs.crm_version }}"
           else
             CRM_VERSIONS="develop,v1392"
           fi
-          echo "CRM_VERSIONS=${CRM_VERSIONS}" >> $GITHUB_OUTPUT
+          
+          # Create JSON for frappe matrix
+          FRAPPE_JSON=$(echo $FRAPPE_VERSIONS | tr ',' '\n' | jq -R . | jq -s '{"frappe_version": .}')
+          echo "matrix_frappe=${FRAPPE_JSON}" >> $GITHUB_OUTPUT
+          
+          # Create JSON for combined frappe/crm matrix
+          CRM_ITEMS=()
+          for FRAPPE_VER in $(echo $FRAPPE_VERSIONS | tr ',' ' '); do
+            for CRM_VER in $(echo $CRM_VERSIONS | tr ',' ' '); do
+              CRM_ITEMS+=("{\"frappe_version\":\"$FRAPPE_VER\",\"crm_version\":\"$CRM_VER\"}")
+            done
+          done
+          CRM_JSON=$(echo "${CRM_ITEMS[@]}" | jq -s .)
+          echo "matrix_crm=${CRM_JSON}" >> $GITHUB_OUTPUT
 
   install-dependencies:
     runs-on: ubuntu-latest
@@ -123,8 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        frappe_version: ${{ fromJson('["' + join(split(needs.setup.outputs.frappe_versions, ','), '","') + '"]') }}
+      matrix: ${{ fromJson(needs.setup.outputs.matrix_frappe) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -157,8 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        frappe_version: ${{ fromJson('["' + join(split(needs.setup.outputs.frappe_versions, ','), '","') + '"]') }}
+      matrix: ${{ fromJson(needs.setup.outputs.matrix_frappe) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -191,9 +200,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        frappe_version: ${{ fromJson('["' + join(split(needs.setup.outputs.frappe_versions, ','), '","') + '"]') }}
-        crm_version: ${{ fromJson('["' + join(split(needs.setup.outputs.crm_versions, ','), '","') + '"]') }}
+      matrix: ${{ fromJson(needs.setup.outputs.matrix_crm) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
