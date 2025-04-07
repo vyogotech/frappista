@@ -68,6 +68,12 @@ jobs:
           make build-amd64 FRAPPE_VERSION=version-15
           make build-arm64 FRAPPE_VERSION=version-15
 
+          # Add CRM builds for PR validation
+          make frappe-crm-amd64 FRAPPE_VERSION=develop
+          make frappe-crm-arm64 FRAPPE_VERSION=develop
+          make frappe-crm-amd64 FRAPPE_VERSION=v1.39.2
+          make frappe-crm-arm64 FRAPPE_VERSION=v1.39.2
+
       - name: Login to Docker Hub
         run: |
           podman login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
@@ -87,3 +93,7 @@ jobs:
           
           # Build and push the ERPNext multi-arch image for version-15
           make erpnext-manifest FRAPPE_VERSION=version-15 VERSION=${{ env.VERSION }}
+          # Build and push the Frappe CRM multi-arch images
+          make frappe-crm-manifest FRAPPE_VERSION=version-15 VERSION=${{ env.VERSION }}
+          make frappe-crm-manifest FRAPPE_VERSION=version-15 VERSION=${{ env.VERSION }}
+          
