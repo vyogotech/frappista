@@ -61,7 +61,7 @@ jobs:
           FRAPPE_VERSIONS="${{ github.event.inputs.frappe_version || 'develop,version-15' }}"
           CRM_VERSIONS="${{ github.event.inputs.crm_version || 'develop,v1392' }}"
 
-          FRAPPE_JSON=$(echo "$FRAPPE_VERSIONS" | tr ',' '\n' | jq -R . | jq -s '{frappe_version: .}')
+          FRAPPE_JSON=$(echo "$FRAPPE_VERSIONS" | tr ',' '\n' | jq -R . | jq -s '{frappe_version: map(.)}')
           echo "matrix_frappe=$FRAPPE_JSON" >> "$GITHUB_OUTPUT"
 
           CRM_ITEMS=()
@@ -70,7 +70,7 @@ jobs:
               CRM_ITEMS+=("{\"frappe_version\":\"$FRAPPE_VER\",\"crm_version\":\"$CRM_VER\"}")
             done
           done
-          CRM_JSON=$(echo "${CRM_ITEMS[@]}" | jq -s .)
+          CRM_JSON=$(printf '%s\n' "${CRM_ITEMS[@]}" | jq -s .)
           echo "matrix_crm=$CRM_JSON" >> "$GITHUB_OUTPUT"
 
   install-dependencies:
