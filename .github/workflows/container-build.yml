@@ -23,9 +23,16 @@ jobs:
     outputs:
       version: ${{ steps.vars.outputs.version }}
       components: ${{ steps.components.outputs.components }}
+      cache-key: ${{ steps.cache-key.outputs.hash }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          HASH=$(echo "${{ github.sha }}-${{ github.run_id }}" | sha256sum | cut -d ' ' -f 1)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
       - name: Set version tag
         id: vars
@@ -45,13 +52,42 @@ jobs:
           COMPONENTS="${{ github.event.inputs.components || 'frappe,erpnext,crm' }}"
           echo "components=$COMPONENTS" >> "$GITHUB_OUTPUT"
 
+      - name: Check disk space before
+        run: |
+          echo "Available disk space before builds:"
+          df -h
+
   install-dependencies:
     runs-on: ubuntu-latest
     needs: setup
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          echo "Before cleaning:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          echo "After cleaning:"
+          df -h
+
+      - name: Cache Podman and dependencies
+        uses: actions/cache@v3
+        id: cache-deps
+        with:
+          path: |
+            ~/.local/share/containers
+            /usr/local/bin/s2i
+          key: ${{ runner.os }}-deps-${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
       - name: Install Podman and S2I
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
@@ -81,38 +117,81 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          echo "Before cleaning:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          echo "After cleaning:"
+          df -h
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
           echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
           sudo systemctl restart podman || true
+      
+      - name: Cache Node Modules
+        uses: actions/cache@v3
+        id: cache-node-modules
+        with:
+          path: |
+            ~/.npm
+            **/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       # Build Frappe develop version
       - name: Build Frappe (develop) - AMD64
-        run: make build-amd64 FRAPPE_VERSION=develop
+        run: |
+          make build-amd64 FRAPPE_VERSION=develop
+          # Clean up after build to free space
+          sudo podman image prune -f
 
       - name: Build Frappe (develop) - ARM64
-        run: make build-arm64 FRAPPE_VERSION=develop
+        run: |
+          make build-arm64 FRAPPE_VERSION=develop
+          # Clean up after build to free space
+          sudo podman image prune -f
 
       - name: Push Frappe (develop)
         if: github.event_name != 'pull_request'
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           make push-manifest FRAPPE_VERSION=develop VERSION=${{ needs.setup.outputs.version }}
+          # Clean up after push to free space
+          sudo podman image prune -f
 
       # Build Frappe version-15
       - name: Build Frappe (version-15) - AMD64
-        run: make build-amd64 FRAPPE_VERSION=version-15
+        run: |
+          make build-amd64 FRAPPE_VERSION=version-15
+          # Clean up after build to free space
+          sudo podman image prune -f
 
       - name: Build Frappe (version-15) - ARM64
-        run: make build-arm64 FRAPPE_VERSION=version-15
+        run: |
+          make build-arm64 FRAPPE_VERSION=version-15
+          # Clean up after build to free space
+          sudo podman image prune -f
 
       - name: Push Frappe (version-15)
         if: github.event_name != 'pull_request'
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           make push-manifest FRAPPE_VERSION=version-15 VERSION=${{ needs.setup.outputs.version }}
+          # Clean up after push to free space
+          sudo podman image prune -f
+
+      - name: Check disk space after
+        run: |
+          df -h
 
   build-erpnext:
     needs: [setup, install-dependencies, build-frappe]
@@ -121,6 +200,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          echo "Before cleaning:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          echo "After cleaning:"
+          df -h
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -131,31 +222,57 @@ jobs:
           mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
           rm -rf s2i-temp source-to-image-*.tar.gz
+      
+      - name: Cache Node Modules
+        uses: actions/cache@v3
+        id: cache-node-modules
+        with:
+          path: |
+            ~/.npm
+            **/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
       # Build ERPNext with Frappe develop
       - name: Build ERPNext (Frappe develop) - AMD64
-        run: make erpnext-amd64 FRAPPE_VERSION=develop
+        run: |
+          make erpnext-amd64 FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       - name: Build ERPNext (Frappe develop) - ARM64
-        run: make erpnext-arm64 FRAPPE_VERSION=develop
+        run: |
+          make erpnext-arm64 FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       - name: Push ERPNext (Frappe develop)
         if: github.event_name != 'pull_request'
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           make erpnext-manifest FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       # Build ERPNext with Frappe version-15
       - name: Build ERPNext (Frappe version-15) - AMD64
-        run: make erpnext-amd64 FRAPPE_VERSION=version-15
+        run: |
+          make erpnext-amd64 FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       - name: Build ERPNext (Frappe version-15) - ARM64
-        run: make erpnext-arm64 FRAPPE_VERSION=version-15
+        run: |
+          make erpnext-arm64 FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       - name: Push ERPNext (Frappe version-15)
         if: github.event_name != 'pull_request'
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           make erpnext-manifest FRAPPE_VERSION=version-15
+          sudo podman image prune -f
+
+      - name: Check disk space after
+        run: |
+          df -h
 
   build-crm:
     needs: [setup, install-dependencies, build-frappe]
@@ -164,6 +281,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          echo "Before cleaning:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          echo "After cleaning:"
+          df -h
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -174,6 +303,17 @@ jobs:
           mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
           rm -rf s2i-temp source-to-image-*.tar.gz
+      
+      - name: Cache Node Modules
+        uses: actions/cache@v3
+        id: cache-node-modules
+        with:
+          path: |
+            ~/.npm
+            **/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
           
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
@@ -182,44 +322,72 @@ jobs:
 
       # Build CRM develop with Frappe develop
       - name: Build CRM (develop with Frappe develop) - AMD64
-        run: make frappe-crm-develop-amd64 FRAPPE_VERSION=develop
+        run: |
+          make frappe-crm-develop-amd64 FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       - name: Build CRM (develop with Frappe develop) - ARM64
-        run: make frappe-crm-develop-arm64 FRAPPE_VERSION=develop
+        run: |
+          make frappe-crm-develop-arm64 FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       - name: Push CRM (develop with Frappe develop)
         if: github.event_name != 'pull_request'
-        run: make frappe-crm-develop-manifest FRAPPE_VERSION=develop
+        run: |
+          make frappe-crm-develop-manifest FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       # Build CRM develop with Frappe version-15
       - name: Build CRM (develop with Frappe version-15) - AMD64
-        run: make frappe-crm-develop-amd64 FRAPPE_VERSION=version-15
+        run: |
+          make frappe-crm-develop-amd64 FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       - name: Build CRM (develop with Frappe version-15) - ARM64
-        run: make frappe-crm-develop-arm64 FRAPPE_VERSION=version-15
+        run: |
+          make frappe-crm-develop-arm64 FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       - name: Push CRM (develop with Frappe version-15)
         if: github.event_name != 'pull_request'
-        run: make frappe-crm-develop-manifest FRAPPE_VERSION=version-15
+        run: |
+          make frappe-crm-develop-manifest FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       # Build CRM v1392 with Frappe develop
       - name: Build CRM (v1392 with Frappe develop) - AMD64
-        run: make frappe-crm-v1392-amd64 FRAPPE_VERSION=develop
+        run: |
+          make frappe-crm-v1392-amd64 FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       - name: Build CRM (v1392 with Frappe develop) - ARM64
-        run: make frappe-crm-v1392-arm64 FRAPPE_VERSION=develop
+        run: |
+          make frappe-crm-v1392-arm64 FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       - name: Push CRM (v1392 with Frappe develop)
         if: github.event_name != 'pull_request'
-        run: make frappe-crm-v1392-manifest FRAPPE_VERSION=develop
+        run: |
+          make frappe-crm-v1392-manifest FRAPPE_VERSION=develop
+          sudo podman image prune -f
 
       # Build CRM v1392 with Frappe version-15
       - name: Build CRM (v1392 with Frappe version-15) - AMD64
-        run: make frappe-crm-v1392-amd64 FRAPPE_VERSION=version-15
+        run: |
+          make frappe-crm-v1392-amd64 FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       - name: Build CRM (v1392 with Frappe version-15) - ARM64
-        run: make frappe-crm-v1392-arm64 FRAPPE_VERSION=version-15
+        run: |
+          make frappe-crm-v1392-arm64 FRAPPE_VERSION=version-15
+          sudo podman image prune -f
 
       - name: Push CRM (v1392 with Frappe version-15)
         if: github.event_name != 'pull_request'
-        run: make frappe-crm-v1392-manifest FRAPPE_VERSION=version-15
+        run: |
+          make frappe-crm-v1392-manifest FRAPPE_VERSION=version-15
+          sudo podman image prune -f
+
+      - name: Check disk space after
+        run: |
+          df -h
