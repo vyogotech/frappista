@@ -2,10 +2,10 @@ name: Build and Publish Container Images
 
 on:
   push:
-    branches: [ main, master ]
-    tags: [ 'v*' ]
+    branches: [main, master]
+    tags: ['v*']
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
     inputs:
       version:
@@ -29,215 +29,162 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.vars.outputs.VERSION }}
-      components: ${{ steps.components.outputs.COMPONENTS }}
+      version: ${{ steps.vars.outputs.version }}
+      components: ${{ steps.components.outputs.components }}
       matrix_frappe: ${{ steps.create-matrix.outputs.matrix_frappe }}
       matrix_crm: ${{ steps.create-matrix.outputs.matrix_crm }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set version tag
         id: vars
         run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
           elif [[ "${{ github.event.inputs.version }}" != "" && "${{ github.event.inputs.version }}" != "latest" ]]; then
-            VERSION=${{ github.event.inputs.version }}
+            VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION=latest
+            VERSION="latest"
           fi
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-      
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Parse components
         id: components
         run: |
-          if [[ "${{ github.event.inputs.components }}" != "" ]]; then
-            COMPONENTS="${{ github.event.inputs.components }}"
-          else
-            COMPONENTS="frappe,erpnext,crm"
-          fi
-          echo "COMPONENTS=${COMPONENTS}" >> $GITHUB_OUTPUT
-      
+          COMPONENTS="${{ github.event.inputs.components || 'frappe,erpnext,crm' }}"
+          echo "components=$COMPONENTS" >> "$GITHUB_OUTPUT"
+
       - name: Create matrix
         id: create-matrix
         run: |
-          # Parse Frappe versions
-          if [[ "${{ github.event.inputs.frappe_version }}" != "" ]]; then
-            FRAPPE_VERSIONS="${{ github.event.inputs.frappe_version }}"
-          else
-            FRAPPE_VERSIONS="develop,version-15"
-          fi
-          
-          # Parse CRM versions
-          if [[ "${{ github.event.inputs.crm_version }}" != "" ]]; then
-            CRM_VERSIONS="${{ github.event.inputs.crm_version }}"
-          else
-            CRM_VERSIONS="develop,v1392"
-          fi
-          
-          # Create JSON for frappe matrix
-          FRAPPE_JSON=$(echo $FRAPPE_VERSIONS | tr ',' '\n' | jq -R . | jq -s '{"frappe_version": .}')
-          echo "matrix_frappe=${FRAPPE_JSON}" >> $GITHUB_OUTPUT
-          
-          # Create JSON for combined frappe/crm matrix
+          FRAPPE_VERSIONS="${{ github.event.inputs.frappe_version || 'develop,version-15' }}"
+          CRM_VERSIONS="${{ github.event.inputs.crm_version || 'develop,v1392' }}"
+
+          FRAPPE_JSON=$(echo "$FRAPPE_VERSIONS" | tr ',' '\n' | jq -R . | jq -s '{frappe_version: .}')
+          echo "matrix_frappe=$FRAPPE_JSON" >> "$GITHUB_OUTPUT"
+
           CRM_ITEMS=()
-          for FRAPPE_VER in $(echo $FRAPPE_VERSIONS | tr ',' ' '); do
-            for CRM_VER in $(echo $CRM_VERSIONS | tr ',' ' '); do
+          for FRAPPE_VER in $(echo "$FRAPPE_VERSIONS" | tr ',' ' '); do
+            for CRM_VER in $(echo "$CRM_VERSIONS" | tr ',' ' '); do
               CRM_ITEMS+=("{\"frappe_version\":\"$FRAPPE_VER\",\"crm_version\":\"$CRM_VER\"}")
             done
           done
           CRM_JSON=$(echo "${CRM_ITEMS[@]}" | jq -s .)
-          echo "matrix_crm=${CRM_JSON}" >> $GITHUB_OUTPUT
+          echo "matrix_crm=$CRM_JSON" >> "$GITHUB_OUTPUT"
 
   install-dependencies:
     runs-on: ubuntu-latest
     needs: setup
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v4
+
       - name: Install Podman and S2I
         run: |
-          # Install Podman
           sudo apt-get update
           sudo apt-get install -y podman
-          podman --version
-          
-          # Install S2I binary
           wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
-          mkdir -p s2i-temp && tar -xvf source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz -C s2i-temp
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
-          rm -rf s2i-temp
-          s2i version
-      
-      - name: Install QEMU for multi-arch support
+          rm -rf s2i-temp source-to-image-*.tar.gz
+
+      - name: Install QEMU
         run: |
           sudo apt-get install -y qemu-user-static
-      
-      - name: Set up Podman for multi-arch builds
+
+      - name: Set up Podman
         run: |
-          echo '[engine]
-          enable_inheritable = true' | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman
-          podman info
-      
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         run: |
-          podman login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
 
   build-frappe:
     needs: [setup, install-dependencies]
-    if: contains(needs.setup.outputs.components, 'frappe')
+    if: contains(fromJson(format('["{0}"]', needs.setup.outputs.components)), 'frappe')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix_frappe) }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
+      - uses: actions/checkout@v4
+
+      - run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
-          echo '[engine]
-          enable_inheritable = true' | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman
-      
-      - name: Build Frappe for AMD64
-        run: |
-          make build-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-      
-      - name: Build Frappe for ARM64
-        run: |
-          make build-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-      
-      - name: Push Frappe Images
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+
+      - run: make build-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
+      - run: make build-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
+
+      - name: Push Images
         if: github.event_name != 'pull_request'
         run: |
-          podman login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           make push-manifest FRAPPE_VERSION=${{ matrix.frappe_version }} VERSION=${{ needs.setup.outputs.version }}
 
   build-erpnext:
     needs: [setup, install-dependencies, build-frappe]
-    if: contains(needs.setup.outputs.components, 'erpnext')
+    if: contains(fromJson(format('["{0}"]', needs.setup.outputs.components)), 'erpnext')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix_frappe) }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
+      - uses: actions/checkout@v4
+
+      - run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
-          echo '[engine]
-          enable_inheritable = true' | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman
-      
-      - name: Build ERPNext for AMD64
-        run: |
-          make erpnext-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-      
-      - name: Build ERPNext for ARM64
-        run: |
-          make erpnext-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-      
-      - name: Push ERPNext Images
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+
+      - run: make erpnext-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
+      - run: make erpnext-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
+
+      - name: Push ERPNext
         if: github.event_name != 'pull_request'
         run: |
-          podman login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           make erpnext-manifest FRAPPE_VERSION=${{ matrix.frappe_version }}
 
   build-crm:
     needs: [setup, install-dependencies, build-frappe]
-    if: contains(needs.setup.outputs.components, 'crm')
+    if: contains(fromJson(format('["{0}"]', needs.setup.outputs.components)), 'crm')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix_crm) }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
+      - uses: actions/checkout@v4
+
+      - run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
-          echo '[engine]
-          enable_inheritable = true' | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman
-      
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         run: |
-          podman login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
-      
-      - name: Build and Push CRM
-        if: github.event_name != 'pull_request'
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+
+      - name: Build CRM
         run: |
           if [[ "${{ matrix.crm_version }}" == "develop" ]]; then
             make frappe-crm-develop-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
             make frappe-crm-develop-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-            make frappe-crm-develop-manifest FRAPPE_VERSION=${{ matrix.frappe_version }}
+            if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+              make frappe-crm-develop-manifest FRAPPE_VERSION=${{ matrix.frappe_version }}
+            fi
           elif [[ "${{ matrix.crm_version }}" == "v1392" ]]; then
             make frappe-crm-v1392-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
             make frappe-crm-v1392-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-            make frappe-crm-v1392-manifest FRAPPE_VERSION=${{ matrix.frappe_version }}
-          fi
-      
-      - name: Build CRM (Pull Request)
-        if: github.event_name == 'pull_request'
-        run: |
-          if [[ "${{ matrix.crm_version }}" == "develop" ]]; then
-            make frappe-crm-develop-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-            make frappe-crm-develop-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-          elif [[ "${{ matrix.crm_version }}" == "v1392" ]]; then
-            make frappe-crm-v1392-amd64 FRAPPE_VERSION=${{ matrix.frappe_version }}
-            make frappe-crm-v1392-arm64 FRAPPE_VERSION=${{ matrix.frappe_version }}
+            if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+              make frappe-crm-v1392-manifest FRAPPE_VERSION=${{ matrix.frappe_version }}
+            fi
           fi
