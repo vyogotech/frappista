@@ -56,12 +56,15 @@ push-arm64: build-arm64
 remove-manifests:
 	podman manifest exists $(IMAGE_NAME) && podman manifest rm $(IMAGE_NAME) || true
 	podman manifest exists $(IMAGE_NAME)-$(FRAPPE_VERSION) && podman manifest rm $(IMAGE_NAME)-$(FRAPPE_VERSION) || true
-
+	podman manifest exists $(IMAGE_NAME) && podman manifest rm $(IMAGE_NAME) || true
 # Create and push multi-arch manifest
 .PHONY: push-manifest
 push-manifest: push-amd64 push-arm64 remove-manifests
-	podman manifest create $(IMAGE_NAME)-$(FRAPPE_VERSION) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
-	podman manifest push --all $(IMAGE_NAME)-$(FRAPPE_VERSION) docker://$(IMAGE_NAME)-$(FRAPPE_VERSION)
+	# podman manifest create $(IMAGE_NAME)-$(FRAPPE_VERSION) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
+	# podman manifest push --all $(IMAGE_NAME)-$(FRAPPE_VERSION) docker://$(IMAGE_NAME)-$(FRAPPE_VERSION)
+	podman manifest create $(IMAGE_NAME)  $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
+	podman manifest push --all $(IMAGE_NAME)  docker://$(IMAGE_NAME)
+
 
 # ERPNext builds
 .PHONY: erpnext erpnext-amd64 erpnext-arm64
