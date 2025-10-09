@@ -34,12 +34,12 @@ build:
 # Build for AMD64
 .PHONY: build-amd64
 build-amd64:
-	podman build --arch=amd64 -t $(IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build --platform=linux/amd64 -t $(IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
-	podman build --arch=arm64 -t $(IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build --platform=linux/arm64 -t $(IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Push images
 .PHONY: push push-amd64 push-arm64
