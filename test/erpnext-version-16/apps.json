@@ -1,7 +1,7 @@
 [
     {
       "url": "https://github.com/frappe/erpnext.git",
-      "branch": "version-16",
+      "branch": "version-16-beta",
       "name": "erpnext"
     }
   ]
