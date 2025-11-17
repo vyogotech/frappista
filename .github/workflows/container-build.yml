@@ -189,24 +189,24 @@ jobs:
           # Clean up after push to free space
           sudo podman image prune -f
 
-      # Build Frappe version-16
-      - name: Build Frappe (version-16) - AMD64
+      # Build Frappe version-16-beta
+      - name: Build Frappe (version-16-beta) - AMD64
         run: |
-          make build-amd64 FRAPPE_VERSION=version-16
+          make build-amd64 FRAPPE_VERSION=version-16-beta
           # Clean up after build to free space
           sudo podman image prune -f
 
-      - name: Build Frappe (version-16) - ARM64
+      - name: Build Frappe (version-16-beta) - ARM64
         run: |
-          make build-arm64 FRAPPE_VERSION=version-16
+          make build-arm64 FRAPPE_VERSION=version-16-beta
           # Clean up after build to free space
           sudo podman image prune -f
 
-      - name: Push Frappe (version-16)
+      - name: Push Frappe (version-16-beta)
         if: github.event_name != 'pull_request'
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make push-manifest FRAPPE_VERSION=version-16 VERSION=${{ needs.setup.outputs.version }}
+          make push-manifest FRAPPE_VERSION=version-16-beta VERSION=${{ needs.setup.outputs.version }}
           # Clean up after push to free space
           sudo podman image prune -f
 
@@ -291,22 +291,22 @@ jobs:
           make erpnext-manifest FRAPPE_VERSION=version-15
           sudo podman image prune -f
 
-      # Build ERPNext with Frappe version-16
-      - name: Build ERPNext (Frappe version-16) - AMD64
+      # Build ERPNext with Frappe version-16-beta
+      - name: Build ERPNext (Frappe version-16-beta) - AMD64
         run: |
-          make erpnext-amd64 FRAPPE_VERSION=version-16
+          make erpnext-amd64 FRAPPE_VERSION=version-16-beta
           sudo podman image prune -f
 
-      - name: Build ERPNext (Frappe version-16) - ARM64
+      - name: Build ERPNext (Frappe version-16-beta) - ARM64
         run: |
-          make erpnext-arm64 FRAPPE_VERSION=version-16
+          make erpnext-arm64 FRAPPE_VERSION=version-16-beta
           sudo podman image prune -f
 
-      - name: Push ERPNext (Frappe version-16)
+      - name: Push ERPNext (Frappe version-16-beta)
         if: github.event_name != 'pull_request'
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make erpnext-manifest FRAPPE_VERSION=version-16
+          make erpnext-manifest FRAPPE_VERSION=version-16-beta
           sudo podman image prune -f
 
       - name: Check disk space after
@@ -425,40 +425,6 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           make frappe-crm-v1392-manifest FRAPPE_VERSION=version-15
-          sudo podman image prune -f
-
-      # Build CRM develop with Frappe version-16
-      - name: Build CRM (develop with Frappe version-16) - AMD64
-        run: |
-          make frappe-crm-develop-amd64 FRAPPE_VERSION=version-16
-          sudo podman image prune -f
-
-      - name: Build CRM (develop with Frappe version-16) - ARM64
-        run: |
-          make frappe-crm-develop-arm64 FRAPPE_VERSION=version-16
-          sudo podman image prune -f
-
-      - name: Push CRM (develop with Frappe version-16)
-        if: github.event_name != 'pull_request'
-        run: |
-          make frappe-crm-develop-manifest FRAPPE_VERSION=version-16
-          sudo podman image prune -f
-
-      # Build CRM v1392 with Frappe version-16
-      - name: Build CRM (v1392 with Frappe version-16) - AMD64
-        run: |
-          make frappe-crm-v1392-amd64 FRAPPE_VERSION=version-16
-          sudo podman image prune -f
-
-      - name: Build CRM (v1392 with Frappe version-16) - ARM64
-        run: |
-          make frappe-crm-v1392-arm64 FRAPPE_VERSION=version-16
-          sudo podman image prune -f
-
-      - name: Push CRM (v1392 with Frappe version-16)
-        if: github.event_name != 'pull_request'
-        run: |
-          make frappe-crm-v1392-manifest FRAPPE_VERSION=version-16
           sudo podman image prune -f
 
       - name: Check disk space after
