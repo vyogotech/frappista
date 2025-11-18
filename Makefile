@@ -44,7 +44,10 @@ build-amd64:
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
+	@echo "Building $(LOCAL_IMAGE_NAME)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION)"
 	podman build --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	@echo "Build completed. Verifying image was created:"
+	podman images $(LOCAL_IMAGE_NAME)-arm64
 
 # Push images
 .PHONY: push push-amd64 push-arm64
