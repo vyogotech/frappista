@@ -161,8 +161,11 @@ jobs:
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-arm64 FRAPPE_VERSION=develop
-          echo "Verifying ARM64 image exists:"
-          podman images | grep "frappe:s2i-develop-arm64" || echo "ERROR: ARM64 image not found!"
+          echo "=== Verifying ARM64 image was built ==="
+          podman images | grep "frappe" || echo "No frappe images found!"
+          echo "=== Checking specific image ==="
+          podman image exists frappe:s2i-develop-arm64 && echo "✓ frappe:s2i-develop-arm64 exists" || echo "✗ frappe:s2i-develop-arm64 NOT FOUND"
+          podman images frappe:s2i-develop-arm64
 
       - name: Push Frappe (develop)
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
@@ -179,6 +182,11 @@ jobs:
       - name: Build ERPNext (Frappe develop) - ARM64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
+          echo "=== ALL IMAGES BEFORE ERPNEXT ARM64 BUILD ==="
+          podman images
+          echo "=== CHECKING FOR FRAPPE ARM64 IMAGE ==="
+          podman image exists frappe:s2i-develop-arm64 && echo "✓ Image exists in storage" || echo "✗ Image NOT found in storage"
+          podman images frappe:s2i-develop-arm64
           make erpnext-arm64 FRAPPE_VERSION=develop
 
       - name: Push ERPNext (Frappe develop)
