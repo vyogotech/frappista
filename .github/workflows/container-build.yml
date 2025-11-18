@@ -151,16 +151,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # Build Frappe develop version
+      # Build Frappe develop version (required for ERPNext)
       - name: Build Frappe (develop) - AMD64
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-amd64 FRAPPE_VERSION=develop
 
       - name: Build Frappe (develop) - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-arm64 FRAPPE_VERSION=develop
+          echo "Verifying ARM64 image exists:"
+          podman images | grep "frappe:s2i-develop-arm64" || echo "ERROR: ARM64 image not found!"
 
       - name: Push Frappe (develop)
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
@@ -191,16 +193,18 @@ jobs:
           sudo podman image prune -f
           df -h
 
-      # Build Frappe version-16-beta
+      # Build Frappe version-16-beta (required for ERPNext)
       - name: Build Frappe (version-16-beta) - AMD64
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-amd64 FRAPPE_VERSION=version-16-beta
 
       - name: Build Frappe (version-16-beta) - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-arm64 FRAPPE_VERSION=version-16-beta
+          echo "Verifying ARM64 image exists:"
+          podman images | grep "frappe:s2i-version-16-beta-arm64" || echo "ERROR: ARM64 image not found!"
 
       - name: Push Frappe (version-16-beta)
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
