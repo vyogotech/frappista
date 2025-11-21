@@ -2,6 +2,11 @@
 REGISTRY=docker.io
 REPO=vyogo
 FRAPPE_VERSION?=develop
+# Local image names (no registry prefix)
+LOCAL_IMAGE_NAME=frappe:s2i-$(FRAPPE_VERSION)
+LOCAL_ERP_IMAGE_NAME=erpnext:sne-$(FRAPPE_VERSION)
+LOCAL_CRM_IMAGE_NAME=crm:sne-$(FRAPPE_VERSION)
+# Registry image names (with registry prefix for pushing)
 IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-$(FRAPPE_VERSION)
 ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-$(FRAPPE_VERSION)
 CRM_IMAGE_NAME=$(REGISTRY)/$(REPO)/crm:sne-$(FRAPPE_VERSION)
@@ -29,26 +34,32 @@ help:
 # Build for current architecture
 .PHONY: build
 build:
-	podman build -t $(IMAGE_NAME) .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build -t $(LOCAL_IMAGE_NAME) .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for AMD64
 .PHONY: build-amd64
 build-amd64:
-	podman build --platform=linux/amd64 -t $(IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
-	podman build --platform=linux/arm64 -t $(IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	@echo "Building $(LOCAL_IMAGE_NAME)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION)"
+	podman build --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	@echo "Build completed. Verifying image was created:"
+	podman images $(LOCAL_IMAGE_NAME)-arm64
 
 # Push images
 .PHONY: push push-amd64 push-arm64
 push:
+	podman tag $(LOCAL_IMAGE_NAME) $(IMAGE_NAME)
 	podman push $(IMAGE_NAME) 
 push-amd64: build-amd64
+	podman tag $(LOCAL_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64
 	podman push $(IMAGE_NAME)-amd64
 
 push-arm64: build-arm64
+	podman tag $(LOCAL_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64
 	podman push $(IMAGE_NAME)-arm64
 
 # Remove existing manifests
@@ -69,13 +80,13 @@ push-manifest: push-amd64 push-arm64 remove-manifests
 # ERPNext builds
 .PHONY: erpnext erpnext-amd64 erpnext-arm64
 erpnext:
-	./s2i-podman.sh test/erpnext-$(FRAPPE_VERSION) $(ERP_IMAGE_NAME) $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME) $(LOCAL_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/erpnext-$(FRAPPE_VERSION) $(ERP_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch amd64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/erpnext-$(FRAPPE_VERSION) $(ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch arm64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-arm64 $(LOCAL_IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove ERPNext manifests
 .PHONY: remove-erpnext-manifests
@@ -90,6 +101,8 @@ erpnext-manifest: erpnext-amd64 erpnext-arm64 remove-erpnext-manifests push-erpn
 # Push ERPNext images
 .PHONY: push-erpnext
 push-erpnext:
+	podman tag $(LOCAL_ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-amd64
+	podman tag $(LOCAL_ERP_IMAGE_NAME)-arm64 $(ERP_IMAGE_NAME)-arm64
 	podman push $(ERP_IMAGE_NAME)-amd64
 	podman push $(ERP_IMAGE_NAME)-arm64
 
@@ -99,7 +112,10 @@ push-erpnext:
 # Clean up images and manifests
 .PHONY: clean clean-manifests
 clean:
-	podman rmi -f $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64 $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64 || true
+	podman rmi -f $(LOCAL_IMAGE_NAME) $(LOCAL_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-arm64 || true
+	podman rmi -f $(LOCAL_ERP_IMAGE_NAME) $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_ERP_IMAGE_NAME)-arm64 || true
+	podman rmi -f $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64 || true
+	podman rmi -f $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64 || true
 
 clean-manifests: remove-manifests remove-erpnext-manifests
 
@@ -109,23 +125,23 @@ clean-manifests: remove-manifests remove-erpnext-manifests
 
 # CRM develop version
 frappe-crm-develop:
-	./s2i-podman.sh test/frappe-crm-develop $(CRM_IMAGE_NAME)-develop $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh test/frappe-crm-develop $(LOCAL_CRM_IMAGE_NAME)-develop $(LOCAL_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
 frappe-crm-develop-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/frappe-crm-develop $(CRM_IMAGE_NAME)-develop-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch amd64 test/frappe-crm-develop $(LOCAL_CRM_IMAGE_NAME)-develop-amd64 $(LOCAL_IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 frappe-crm-develop-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/frappe-crm-develop $(CRM_IMAGE_NAME)-develop-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch arm64 test/frappe-crm-develop $(LOCAL_CRM_IMAGE_NAME)-develop-arm64 $(LOCAL_IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # CRM v1.39.2 version
 frappe-crm-v1392:
-	./s2i-podman.sh test/frappe-crm-v1.39.2 $(CRM_IMAGE_NAME)-v1392 $(IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh test/frappe-crm-v1.39.2 $(LOCAL_CRM_IMAGE_NAME)-v1392 $(LOCAL_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
 frappe-crm-v1392-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/frappe-crm-v1.39.2 $(CRM_IMAGE_NAME)-v1392-amd64 $(IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch amd64 test/frappe-crm-v1.39.2 $(LOCAL_CRM_IMAGE_NAME)-v1392-amd64 $(LOCAL_IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 frappe-crm-v1392-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/frappe-crm-v1.39.2 $(CRM_IMAGE_NAME)-v1392-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch arm64 test/frappe-crm-v1.39.2 $(LOCAL_CRM_IMAGE_NAME)-v1392-arm64 $(LOCAL_IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove Frappe CRM manifests
 .PHONY: remove-frappe-crm-manifests
@@ -136,6 +152,8 @@ remove-frappe-crm-manifests:
 # Create and push Frappe CRM multi-arch manifest for develop
 .PHONY: frappe-crm-develop-manifest
 frappe-crm-develop-manifest: frappe-crm-develop-amd64 frappe-crm-develop-arm64 remove-frappe-crm-manifests
+	podman tag $(LOCAL_CRM_IMAGE_NAME)-develop-amd64 $(CRM_IMAGE_NAME)-develop-amd64
+	podman tag $(LOCAL_CRM_IMAGE_NAME)-develop-arm64 $(CRM_IMAGE_NAME)-develop-arm64
 	podman push $(CRM_IMAGE_NAME)-develop-amd64
 	podman push $(CRM_IMAGE_NAME)-develop-arm64
 	podman manifest create $(CRM_IMAGE_NAME)-develop $(CRM_IMAGE_NAME)-develop-amd64 $(CRM_IMAGE_NAME)-develop-arm64
@@ -144,6 +162,8 @@ frappe-crm-develop-manifest: frappe-crm-develop-amd64 frappe-crm-develop-arm64 r
 # Create and push Frappe CRM multi-arch manifest for v1.39.2
 .PHONY: frappe-crm-v1392-manifest
 frappe-crm-v1392-manifest: frappe-crm-v1392-amd64 frappe-crm-v1392-arm64 remove-frappe-crm-manifests
+	podman tag $(LOCAL_CRM_IMAGE_NAME)-v1392-amd64 $(CRM_IMAGE_NAME)-v1392-amd64
+	podman tag $(LOCAL_CRM_IMAGE_NAME)-v1392-arm64 $(CRM_IMAGE_NAME)-v1392-arm64
 	podman push $(CRM_IMAGE_NAME)-v1392-amd64
 	podman push $(CRM_IMAGE_NAME)-v1392-arm64
 	podman manifest create $(CRM_IMAGE_NAME)-v1392 $(CRM_IMAGE_NAME)-v1392-amd64 $(CRM_IMAGE_NAME)-v1392-arm64
