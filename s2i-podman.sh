@@ -81,6 +81,17 @@ cp -r ${srcdir}/* upload/src/
 echo "[DEBUG] Source directory content after copy:"
 ls -la upload/src/
 
+echo "[DEBUG] ===== Generated Dockerfile START ====="
+cat "$dockerfile"
+echo "[DEBUG] ===== Generated Dockerfile END ====="
+
+echo "[DEBUG] ===== Checking if builder image exists ====="
+podman image exists "$builder" && echo "[DEBUG] ✓ Builder image '$builder' exists" || echo "[DEBUG] ✗ Builder image '$builder' NOT FOUND"
+echo "[DEBUG] ===== Listing images matching builder ====="
+podman images "$builder" || echo "[DEBUG] No images found matching '$builder'"
+echo "[DEBUG] ===== All podman images ====="
+podman images | head -20
+
 echo "[INFO] Running podman build."
 if [[ -n "$platform" ]]; then
   podman build --pull=never --platform "$platform" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache || { echo "[ERROR] podman build failed"; exit 1; }
