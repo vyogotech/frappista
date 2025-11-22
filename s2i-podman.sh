@@ -83,9 +83,9 @@ ls -la upload/src/
 
 echo "[INFO] Running podman build."
 if [[ -n "$platform" ]]; then
-  podman build --pull=never --platform "$platform" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache || { echo "[ERROR] podman build failed"; exit 1; }
+  podman build  --platform "$platform" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache || { echo "[ERROR] podman build failed"; exit 1; }
 else
-  podman build --pull=never -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
+  podman build  -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache
 fi
 
 echo "[DEBUG] Script completed."
