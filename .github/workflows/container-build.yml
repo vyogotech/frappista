@@ -151,13 +151,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # Build Frappe develop version (required for ERPNext)
-      - name: Build Frappe (develop) - AMD64
+      # Build and Push Frappe develop version (required for ERPNext)
+      - name: Build and Push Frappe (develop) - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-amd64 FRAPPE_VERSION=develop
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-amd64 FRAPPE_VERSION=develop
+            echo "✓ Frappe AMD64 develop image pushed successfully"
+          fi
 
-      - name: Build Frappe (develop) - ARM64
+      - name: Build and Push Frappe (develop) - ARM64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-arm64 FRAPPE_VERSION=develop
@@ -166,20 +171,32 @@ jobs:
           echo "=== Checking specific image ==="
           podman image exists frappe:s2i-develop-arm64 && echo "✓ frappe:s2i-develop-arm64 exists" || echo "✗ frappe:s2i-develop-arm64 NOT FOUND"
           podman images frappe:s2i-develop-arm64
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-arm64 FRAPPE_VERSION=develop
+            echo "✓ Frappe ARM64 develop image pushed successfully"
+          fi
 
-      - name: Push Frappe (develop)
+      - name: Create Frappe (develop) Multi-arch Manifest
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make remove-manifests FRAPPE_VERSION=develop
           make push-manifest FRAPPE_VERSION=develop VERSION=${{ needs.setup.outputs.version }}
 
-      # Build ERPNext with Frappe develop (images available from previous steps)
-      - name: Build ERPNext (Frappe develop) - AMD64
+      # Build and Push ERPNext with Frappe develop (images available from previous steps)
+      - name: Build and Push ERPNext (Frappe develop) - AMD64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-amd64 FRAPPE_VERSION=develop
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag erpnext:sne-develop-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-develop-amd64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-develop-amd64
+            echo "✓ ERPNext AMD64 develop image pushed successfully"
+          fi
 
-      - name: Build ERPNext (Frappe develop) - ARM64
+      - name: Build and Push ERPNext (Frappe develop) - ARM64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
           echo "=== ALL IMAGES BEFORE ERPNEXT ARM64 BUILD ==="
@@ -188,11 +205,18 @@ jobs:
           podman image exists frappe:s2i-develop-arm64 && echo "✓ Image exists in storage" || echo "✗ Image NOT found in storage"
           podman images frappe:s2i-develop-arm64
           make erpnext-arm64 FRAPPE_VERSION=develop
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag erpnext:sne-develop-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-develop-arm64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-develop-arm64
+            echo "✓ ERPNext ARM64 develop image pushed successfully"
+          fi
 
-      - name: Push ERPNext (Frappe develop)
+      - name: Create ERPNext (develop) Multi-arch Manifest
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make remove-erpnext-manifests FRAPPE_VERSION=develop
           make erpnext-manifest FRAPPE_VERSION=develop
 
       # Clean up after develop builds to free space
@@ -201,40 +225,64 @@ jobs:
           sudo podman image prune -f
           df -h
 
-      # Build Frappe version-16-beta (required for ERPNext)
-      - name: Build Frappe (version-16-beta) - AMD64
+      # Build and Push Frappe version-16-beta (required for ERPNext)
+      - name: Build and Push Frappe (version-16-beta) - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-amd64 FRAPPE_VERSION=version-16-beta
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-amd64 FRAPPE_VERSION=version-16-beta
+            echo "✓ Frappe AMD64 version-16-beta image pushed successfully"
+          fi
 
-      - name: Build Frappe (version-16-beta) - ARM64
+      - name: Build and Push Frappe (version-16-beta) - ARM64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make build-arm64 FRAPPE_VERSION=version-16-beta
           echo "Verifying ARM64 image exists:"
           podman images | grep "frappe:s2i-version-16-beta-arm64" || echo "ERROR: ARM64 image not found!"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-arm64 FRAPPE_VERSION=version-16-beta
+            echo "✓ Frappe ARM64 version-16-beta image pushed successfully"
+          fi
 
-      - name: Push Frappe (version-16-beta)
+      - name: Create Frappe (version-16-beta) Multi-arch Manifest
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make remove-manifests FRAPPE_VERSION=version-16-beta
           make push-manifest FRAPPE_VERSION=version-16-beta VERSION=${{ needs.setup.outputs.version }}
 
-      # Build ERPNext with Frappe version-16-beta (images available from previous steps)
-      - name: Build ERPNext (Frappe version-16-beta) - AMD64
+      # Build and Push ERPNext with Frappe version-16-beta (images available from previous steps)
+      - name: Build and Push ERPNext (Frappe version-16-beta) - AMD64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-amd64 FRAPPE_VERSION=version-16-beta
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag erpnext:sne-version-16-beta-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-beta-amd64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-beta-amd64
+            echo "✓ ERPNext AMD64 version-16-beta image pushed successfully"
+          fi
 
-      - name: Build ERPNext (Frappe version-16-beta) - ARM64
+      - name: Build and Push ERPNext (Frappe version-16-beta) - ARM64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-arm64 FRAPPE_VERSION=version-16-beta
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag erpnext:sne-version-16-beta-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-beta-arm64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-beta-arm64
+            echo "✓ ERPNext ARM64 version-16-beta image pushed successfully"
+          fi
 
-      - name: Push ERPNext (Frappe version-16-beta)
+      - name: Create ERPNext (version-16-beta) Multi-arch Manifest
         if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make remove-erpnext-manifests FRAPPE_VERSION=version-16-beta
           make erpnext-manifest FRAPPE_VERSION=version-16-beta
 
       - name: Check disk space after
