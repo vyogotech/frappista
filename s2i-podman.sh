@@ -92,6 +92,13 @@ podman images "$builder" || echo "[DEBUG] No images found matching '$builder'"
 echo "[DEBUG] ===== All podman images ====="
 podman images | head -20
 
+# Modify the Dockerfile to use containers-storage prefix for local images
+echo "[DEBUG] Modifying Dockerfile to use containers-storage prefix"
+sed -i "s|FROM ${builder}|FROM containers-storage:${builder}|g" "$dockerfile"
+echo "[DEBUG] ===== Modified Dockerfile START ====="
+cat "$dockerfile"
+echo "[DEBUG] ===== Modified Dockerfile END ====="
+
 echo "[INFO] Running podman build."
 if [[ -n "$platform" ]]; then
   podman build --pull=never --platform "$platform" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache || { echo "[ERROR] podman build failed"; exit 1; }
