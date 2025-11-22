@@ -50,31 +50,42 @@ build-arm64:
 	podman images $(LOCAL_IMAGE_NAME)-arm64
 
 # Push images
-.PHONY: push push-amd64 push-arm64
+.PHONY: push push-amd64 push-arm64 push-only-amd64 push-only-arm64
 push:
 	podman tag $(LOCAL_IMAGE_NAME) $(IMAGE_NAME)
-	podman push $(IMAGE_NAME) 
-push-amd64: build-amd64
+	podman push $(IMAGE_NAME)
+
+# Push targets that rebuild (for backwards compatibility)
+push-amd64: build-amd64 push-only-amd64
+push-arm64: build-arm64 push-only-arm64
+
+# Push targets that only tag and push (no rebuild)
+push-only-amd64:
+	@echo "Tagging and pushing AMD64 image..."
 	podman tag $(LOCAL_IMAGE_NAME)-amd64 $(IMAGE_NAME)-amd64
 	podman push $(IMAGE_NAME)-amd64
+	@echo "Successfully pushed $(IMAGE_NAME)-amd64"
 
-push-arm64: build-arm64
+push-only-arm64:
+	@echo "Tagging and pushing ARM64 image..."
 	podman tag $(LOCAL_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64
 	podman push $(IMAGE_NAME)-arm64
+	@echo "Successfully pushed $(IMAGE_NAME)-arm64"
 
 # Remove existing manifests
 .PHONY: remove-manifests
 remove-manifests:
 	podman manifest exists $(IMAGE_NAME) && podman manifest rm $(IMAGE_NAME) || true
 	podman manifest exists $(IMAGE_NAME)-$(FRAPPE_VERSION) && podman manifest rm $(IMAGE_NAME)-$(FRAPPE_VERSION) || true
-	podman manifest exists $(IMAGE_NAME) && podman manifest rm $(IMAGE_NAME) || true
-# Create and push multi-arch manifest
+
+# Create and push multi-arch manifest (assumes images already built)
 .PHONY: push-manifest
-push-manifest: push-amd64 push-arm64 remove-manifests
-	# podman manifest create $(IMAGE_NAME)-$(FRAPPE_VERSION) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
-	# podman manifest push --all $(IMAGE_NAME)-$(FRAPPE_VERSION) docker://$(IMAGE_NAME)-$(FRAPPE_VERSION)
-	podman manifest create $(IMAGE_NAME)  $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
-	podman manifest push --all $(IMAGE_NAME)  docker://$(IMAGE_NAME)
+push-manifest: remove-manifests push-only-amd64 push-only-arm64
+	@echo "Creating multi-arch manifest for $(IMAGE_NAME)..."
+	podman manifest create $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
+	@echo "Pushing manifest..."
+	podman manifest push --all $(IMAGE_NAME) docker://$(IMAGE_NAME)
+	@echo "Successfully pushed multi-arch manifest $(IMAGE_NAME)"
 
 
 # ERPNext builds
@@ -94,20 +105,28 @@ remove-erpnext-manifests:
 	podman manifest exists $(ERP_IMAGE_NAME) && podman manifest rm $(ERP_IMAGE_NAME) || true
 	podman manifest exists $(ERP_IMAGE_NAME)-$(FRAPPE_VERSION) && podman manifest rm $(ERP_IMAGE_NAME)-$(FRAPPE_VERSION) || true
 
-# Create and push ERPNext multi-arch manifest
+# Create and push ERPNext multi-arch manifest (assumes images already built)
 .PHONY: erpnext-manifest
-erpnext-manifest: erpnext-amd64 erpnext-arm64 remove-erpnext-manifests push-erpnext
+erpnext-manifest: remove-erpnext-manifests push-erpnext
 
-# Push ERPNext images
+# Push ERPNext images (only tag and push, no rebuild)
 .PHONY: push-erpnext
 push-erpnext:
+	@echo "Tagging and pushing ERPNext AMD64 image..."
 	podman tag $(LOCAL_ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-amd64
-	podman tag $(LOCAL_ERP_IMAGE_NAME)-arm64 $(ERP_IMAGE_NAME)-arm64
 	podman push $(ERP_IMAGE_NAME)-amd64
+	@echo "Successfully pushed $(ERP_IMAGE_NAME)-amd64"
+	
+	@echo "Tagging and pushing ERPNext ARM64 image..."
+	podman tag $(LOCAL_ERP_IMAGE_NAME)-arm64 $(ERP_IMAGE_NAME)-arm64
 	podman push $(ERP_IMAGE_NAME)-arm64
+	@echo "Successfully pushed $(ERP_IMAGE_NAME)-arm64"
 
+	@echo "Creating multi-arch manifest for $(ERP_IMAGE_NAME)..."
 	podman manifest create $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64
+	@echo "Pushing manifest..."
 	podman manifest push --all $(ERP_IMAGE_NAME) docker://$(ERP_IMAGE_NAME)
+	@echo "Successfully pushed multi-arch manifest $(ERP_IMAGE_NAME)"
 
 # Clean up images and manifests
 .PHONY: clean clean-manifests
@@ -149,22 +168,30 @@ remove-frappe-crm-manifests:
 	podman manifest exists $(CRM_IMAGE_NAME)-develop && podman manifest rm  $(CRM_IMAGE_NAME)-develop || true
 	podman manifest exists  $(CRM_IMAGE_NAME)-v1392 && podman manifest rm  $(CRM_IMAGE_NAME)-v1392 || true
 
-# Create and push Frappe CRM multi-arch manifest for develop
+# Create and push Frappe CRM multi-arch manifest for develop (assumes images already built)
 .PHONY: frappe-crm-develop-manifest
-frappe-crm-develop-manifest: frappe-crm-develop-amd64 frappe-crm-develop-arm64 remove-frappe-crm-manifests
+frappe-crm-develop-manifest: remove-frappe-crm-manifests
+	@echo "Tagging and pushing Frappe CRM develop AMD64..."
 	podman tag $(LOCAL_CRM_IMAGE_NAME)-develop-amd64 $(CRM_IMAGE_NAME)-develop-amd64
-	podman tag $(LOCAL_CRM_IMAGE_NAME)-develop-arm64 $(CRM_IMAGE_NAME)-develop-arm64
 	podman push $(CRM_IMAGE_NAME)-develop-amd64
+	@echo "Tagging and pushing Frappe CRM develop ARM64..."
+	podman tag $(LOCAL_CRM_IMAGE_NAME)-develop-arm64 $(CRM_IMAGE_NAME)-develop-arm64
 	podman push $(CRM_IMAGE_NAME)-develop-arm64
+	@echo "Creating multi-arch manifest..."
 	podman manifest create $(CRM_IMAGE_NAME)-develop $(CRM_IMAGE_NAME)-develop-amd64 $(CRM_IMAGE_NAME)-develop-arm64
 	podman manifest push --all $(CRM_IMAGE_NAME)-develop docker://$(CRM_IMAGE_NAME)-develop
+	@echo "Successfully pushed $(CRM_IMAGE_NAME)-develop"
 
-# Create and push Frappe CRM multi-arch manifest for v1.39.2
+# Create and push Frappe CRM multi-arch manifest for v1.39.2 (assumes images already built)
 .PHONY: frappe-crm-v1392-manifest
-frappe-crm-v1392-manifest: frappe-crm-v1392-amd64 frappe-crm-v1392-arm64 remove-frappe-crm-manifests
+frappe-crm-v1392-manifest: remove-frappe-crm-manifests
+	@echo "Tagging and pushing Frappe CRM v1.39.2 AMD64..."
 	podman tag $(LOCAL_CRM_IMAGE_NAME)-v1392-amd64 $(CRM_IMAGE_NAME)-v1392-amd64
-	podman tag $(LOCAL_CRM_IMAGE_NAME)-v1392-arm64 $(CRM_IMAGE_NAME)-v1392-arm64
 	podman push $(CRM_IMAGE_NAME)-v1392-amd64
+	@echo "Tagging and pushing Frappe CRM v1.39.2 ARM64..."
+	podman tag $(LOCAL_CRM_IMAGE_NAME)-v1392-arm64 $(CRM_IMAGE_NAME)-v1392-arm64
 	podman push $(CRM_IMAGE_NAME)-v1392-arm64
+	@echo "Creating multi-arch manifest..."
 	podman manifest create $(CRM_IMAGE_NAME)-v1392 $(CRM_IMAGE_NAME)-v1392-amd64 $(CRM_IMAGE_NAME)-v1392-arm64
 	podman manifest push --all $(CRM_IMAGE_NAME)-v1392 docker://$(CRM_IMAGE_NAME)-v1392
+	@echo "Successfully pushed $(CRM_IMAGE_NAME)-v1392"
