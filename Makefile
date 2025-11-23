@@ -97,7 +97,7 @@ erpnext-amd64: build-amd64
 	./s2i-podman.sh --arch amd64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-arm64 $(LOCAL_IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch arm64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove ERPNext manifests
 .PHONY: remove-erpnext-manifests
