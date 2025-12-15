@@ -25,6 +25,12 @@ command -v mysqld >/dev/null 2>&1 || error "mysqld is not installed. Please inst
 command -v redis-server >/dev/null 2>&1 || error "redis-server is not installed. Please install Redis."
 command -v bench >/dev/null 2>&1 || error "bench is not installed. Please install Bench."
 
+# Initialize MariaDB data directory if not already done
+if [ ! -f /var/lib/mysql/mysql/user.MYD ]; then
+  log "Initializing MariaDB data directory..."
+  mariadb-install-db --user=mysql --datadir=/var/lib/mysql --skip-test-db
+fi
+
 # Start MariaDB with proper daemonization
 log "Starting MariaDB..."
 if mysqld --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
@@ -80,19 +86,25 @@ apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frapp
 apps_in_txt=($(cat sites/apps.txt))
 for app in "${apps_list[@]}"; do
   app_name=$(basename "$app")
+  env/bin/python3 -m pip install -e "./apps/${app_name}" || true # we do not fail if pip install fails
+  log "Building assets for custom app $app_name..."
   if [[ ! " ${apps_in_txt[@]} " =~ " ${app_name} " ]]; then
-    env/bin/python3 -m pip install -e "./apps/${app_name}"    
-    log "Building assets for custom app $app_name..."
     log "Registered app: $app_name"
   else
     log "App $app_name already registered."
   fi
 done
+done
 ls -1 apps/ > sites/apps.txt
 log "All apps registered."
 # Start Frappe/ERPNext with bench in foreground
 log "Starting Frappe/ERPNext with bench..."
+#allow remote connections to mariadb
+mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${MYSQL_ROOT_PASSWORD}');  GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;" || true
+#allow remote connections to redis
+redis-cli CONFIG SET protected-mode no  || true
 bench start
+#allow remote connections to redis using redis-cli. use only for testing purpose
 
 # This script should never reach this point, as bench start runs in foreground
 # If we get here, something went wrong
