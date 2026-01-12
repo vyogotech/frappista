@@ -10,7 +10,8 @@ ENV FRAPPE_SITE_NAME=dev.localhost
 
 # Copy your configuration files
 COPY apps.json /tmp/apps.json
-COPY site-config.json /tmp/site-config.json
+# Copy your local app source code
+COPY my_custom_app /upload/src/my_custom_app
 
 # If you need to run custom setup steps
 # RUN cd /home/frappe/frappe-bench && bench get-app ...
