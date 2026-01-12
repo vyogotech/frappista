@@ -157,6 +157,15 @@ If this file is present, the `assemble` script will create the specified site an
 
 By using these configuration files, you can automate and customize the build process to suit your specific requirements.
 
+## Developer Samples
+
+For practical examples and a quick-start guide on how to package your own apps using Frappista S2I images, check out the **[samples/](./samples/)** directory.
+
+Included samples:
+- **[apps.json](./samples/custom-app/apps.json)**: Multi-app configuration.
+- **[Containerfile](./samples/custom-app/Containerfile)**: Using Frappista as a base image.
+- **[site-config.json](./samples/custom-app/site-config.json)**: Site-level configuration.
+
 ## Startup log
 ### Example Startup Log  
 
