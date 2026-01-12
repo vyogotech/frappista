@@ -1,7 +1,7 @@
 # Configuration
 REGISTRY=docker.io
 REPO=vyogo
-FRAPPE_VERSION?=develop
+FRAPPE_VERSION?=version-15
 # Local image names (no registry prefix)
 LOCAL_IMAGE_NAME=frappe:s2i-$(FRAPPE_VERSION)
 LOCAL_ERP_IMAGE_NAME=erpnext:sne-$(FRAPPE_VERSION)
@@ -91,13 +91,13 @@ push-manifest: remove-manifests push-only-amd64 push-only-arm64
 # ERPNext builds
 .PHONY: erpnext erpnext-amd64 erpnext-arm64
 erpnext:
-	./s2i-podman.sh test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME) $(LOCAL_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh test/erpnext $(LOCAL_ERP_IMAGE_NAME) $(LOCAL_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-amd64: build-amd64
-	./s2i-podman.sh --arch amd64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch amd64 test/erpnext $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-amd64 --frappe-branch=$(FRAPPE_VERSION)
 
 erpnext-arm64: build-arm64
-	./s2i-podman.sh --arch arm64 test/erpnext-$(FRAPPE_VERSION) $(LOCAL_ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
+	./s2i-podman.sh --arch arm64 test/erpnext $(LOCAL_ERP_IMAGE_NAME)-arm64 $(IMAGE_NAME)-arm64 --frappe-branch=$(FRAPPE_VERSION)
 
 # Remove ERPNext manifests
 .PHONY: remove-erpnext-manifests
