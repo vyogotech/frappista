@@ -4,14 +4,11 @@ REPO=vyogo
 FRAPPE_VERSION?=develop
 
 # Determine Python version based on Frappe version
-# version-16 and later require Python 3.12, earlier versions use Python 3.11
-ifeq ($(FRAPPE_VERSION),version-16)
-PYTHON_VERSION=3.12
-else ifeq ($(FRAPPE_VERSION),version-16-hotfix)
-PYTHON_VERSION=3.12
-else
+# Note: Frappe v16 officially requires Python 3.14 (not yet available in repos)
+# For now, using Python 3.11 which works. Update to 3.12+ when available.
+# version-16 and later will use Python 3.11 (to be updated to 3.12+ later)
+# earlier versions use Python 3.11
 PYTHON_VERSION=3.11
-endif
 
 # Local image names (no registry prefix)
 LOCAL_IMAGE_NAME=frappe:s2i-$(FRAPPE_VERSION)

@@ -70,7 +70,6 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
     PYTHONIOENCODING=UTF-8 \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
-    CNB_STACK_ID=com.redhat.stacks.ubi9-python-${PYTHON_VERSION//.} \
     CNB_USER_ID=1001 \
     CNB_GROUP_ID=0 \
     PIP_NO_CACHE_DIR=off
@@ -78,6 +77,8 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
 RUN INSTALL_PKGS="python${PYTHON_VERSION} python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip" && \
     dnf -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
+    PYTHON_VERSION_SHORT=$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    export CNB_STACK_ID=com.redhat.stacks.ubi9-python-${PYTHON_VERSION_SHORT} && \
     alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1 && \
     alternatives --set python /usr/bin/python${PYTHON_VERSION} && \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
