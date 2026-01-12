@@ -11,6 +11,10 @@ IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-$(FRAPPE_VERSION)
 ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-$(FRAPPE_VERSION)
 CRM_IMAGE_NAME=$(REGISTRY)/$(REPO)/crm:sne-$(FRAPPE_VERSION)
 
+# Cache configuration
+CACHE_REPO=$(REGISTRY)/$(REPO)/frappe-cache:$(FRAPPE_VERSION)
+CACHE_FLAGS?=# e.g. --cache-from=$(CACHE_REPO) --cache-to=$(CACHE_REPO)
+
 # Default target
 .PHONY: all
 all: help
@@ -34,18 +38,18 @@ help:
 # Build for current architecture
 .PHONY: build
 build:
-	podman build -t $(LOCAL_IMAGE_NAME) .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build $(CACHE_FLAGS) -t $(LOCAL_IMAGE_NAME) .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for AMD64
 .PHONY: build-amd64
 build-amd64:
-	podman build --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build $(CACHE_FLAGS) --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
 	@echo "Building $(LOCAL_IMAGE_NAME)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION)"
-	podman build --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	podman build $(CACHE_FLAGS) --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
 	@echo "Build completed. Verifying image was created:"
 	podman images $(LOCAL_IMAGE_NAME)-arm64
 
