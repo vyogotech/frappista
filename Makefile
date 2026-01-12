@@ -1,7 +1,7 @@
 # Configuration
 REGISTRY=docker.io
 REPO=vyogo
-FRAPPE_VERSION?=version-16
+FRAPPE_VERSION?=develop
 # Local image names (no registry prefix)
 LOCAL_IMAGE_NAME=frappe:s2i-$(FRAPPE_VERSION)
 LOCAL_ERP_IMAGE_NAME=erpnext:sne-$(FRAPPE_VERSION)
