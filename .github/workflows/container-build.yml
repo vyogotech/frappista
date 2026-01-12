@@ -6,6 +6,10 @@ on:
     tags: ['v*']
   pull_request:
     branches: [version-15, version-16, develop]
+  schedule:
+    - cron: '0 0 * * *' # Build daily at midnight
+  repository_dispatch:
+    types: [upstream_app_update]
   workflow_dispatch:
     inputs:
       version:
@@ -16,6 +20,11 @@ on:
         description: 'Components to build (comma-separated: frappe,erpnext)'
         required: false
         default: 'frappe,erpnext'
+      skip_sha_check:
+        description: 'Skip upstream SHA check (always build)'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   setup:
@@ -24,15 +33,10 @@ jobs:
       version: ${{ steps.vars.outputs.version }}
       components: ${{ steps.components.outputs.components }}
       cache-key: ${{ steps.cache-key.outputs.hash }}
+      should_build: ${{ steps.check_shas.outputs.should_build }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Generate cache key
-        id: cache-key
-        run: |
-          HASH=$(echo "${{ github.sha }}-${{ github.run_id }}" | sha256sum | cut -d ' ' -f 1)
-          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
       - name: Set version tag
         id: vars
@@ -52,46 +56,58 @@ jobs:
           COMPONENTS="${{ github.event.inputs.components || 'frappe,erpnext' }}"
           echo "components=$COMPONENTS" >> "$GITHUB_OUTPUT"
 
+      - name: Restore SHA cache
+        id: restore-sha
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: upstream_sha.txt
+          key: upstream-sha-${{ steps.vars.outputs.version }}
+
+      - name: Check upstream SHAs
+        id: check_shas
+        run: |
+          TARGET_BRANCH="${{ steps.vars.outputs.version }}"
+          FRAPPE_SHA=$(git ls-remote https://github.com/frappe/frappe.git refs/heads/$TARGET_BRANCH | cut -f1)
+          ERPNEXT_SHA=$(git ls-remote https://github.com/frappe/erpnext.git refs/heads/$TARGET_BRANCH | cut -f1)
+          COMBINED_SHA="${FRAPPE_SHA}-${ERPNEXT_SHA}"
+          
+          SHOULD_BUILD="true"
+          if [[ "${{ github.event_name }}" == "schedule" && "${{ github.event.inputs.skip_sha_check }}" != "true" ]]; then
+            if [[ -f upstream_sha.txt ]]; then
+              PREVIOUS_SHA=$(cat upstream_sha.txt)
+              if [[ "$COMBINED_SHA" == "$PREVIOUS_SHA" ]]; then
+                SHOULD_BUILD="false"
+                echo "No changes detected in upstream SHAs. Skipping build."
+              fi
+            fi
+          fi
+          
+          echo "$COMBINED_SHA" > upstream_sha.txt
+          echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
+
+      - name: Save SHA cache
+        if: steps.check_shas.outputs.should_build == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: upstream_sha.txt
+          key: upstream-sha-${{ steps.vars.outputs.version }}-${{ github.run_id }}
+
+
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          HASH=$(echo "${{ github.sha }}-${{ github.run_id }}" | sha256sum | cut -d ' ' -f 1)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
       - name: Check disk space before
         run: |
           echo "Available disk space before builds:"
           df -h
 
-  install-dependencies:
-    runs-on: ubuntu-latest
-    needs: setup
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune -af
-
-      - name: Install Podman and S2I
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman qemu-user-static
-          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
-          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
-          sudo mv s2i-temp/s2i /usr/local/bin/
-          rm -rf s2i-temp source-to-image-*.tar.gz
-
-      - name: Set up Podman
-        run: |
-          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman || true
-
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        run: |
-          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-
   build-and-test:
-    needs: [setup, install-dependencies]
+    needs: setup
+    if: needs.setup.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -123,7 +139,6 @@ jobs:
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
             make push-only-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-            echo "✓ Frappe AMD64 image pushed successfully with tag ${{ needs.setup.outputs.version }}"
           fi
 
       # Build and Push Frappe - ARM64
@@ -134,7 +149,6 @@ jobs:
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
             make push-only-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-            echo "✓ Frappe ARM64 image pushed successfully with tag ${{ needs.setup.outputs.version }}"
           fi
 
       - name: Create Frappe Multi-arch Manifest
@@ -151,9 +165,8 @@ jobs:
           make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag erpnext:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
-            echo "✓ ERPNext AMD64 image pushed successfully with tag ${{ needs.setup.outputs.version }}"
           fi
 
       # Build and Push ERPNext - ARM64
@@ -163,9 +176,8 @@ jobs:
           make erpnext-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag erpnext:sne-${{ needs.setup.outputs.version }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-arm64
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-arm64
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-arm64
-            echo "✓ ERPNext ARM64 image pushed successfully with tag ${{ needs.setup.outputs.version }}"
           fi
 
       - name: Create ERPNext Multi-arch Manifest
