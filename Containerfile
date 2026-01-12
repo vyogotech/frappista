@@ -61,7 +61,7 @@ RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     [[ "$(id redis)" == "uid=1001(redis)"* ]] && usermod -l frappe -u 1001 -d /home/frappe -m -c "Frappe Bench" redis
 
 # Setup Python
-ENV PYTHON_VERSION=3.11 \
+ENV PYTHON_VERSION=3.14 \
     PATH=$HOME/.local/bin/:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
@@ -72,20 +72,20 @@ ENV PYTHON_VERSION=3.11 \
     CNB_GROUP_ID=0 \
     PIP_NO_CACHE_DIR=off
 
-RUN INSTALL_PKGS="python3.11 python3.11-devel python3.11-pip" && \
+RUN INSTALL_PKGS="python3.14 python3.14-devel python3.14-pip" && \
     dnf -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
-    alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
-    alternatives --set python /usr/bin/python3.11 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python3-config && \
-    python3.11 -m pip install --no-cache-dir --upgrade pip && \
+    alternatives --install /usr/bin/python python /usr/bin/python3.14 1 && \
+    alternatives --set python /usr/bin/python3.14 && \
+    ln -sf /usr/bin/python3.14 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.14 /usr/bin/python3-config && \
+    python3.14 -m pip install --no-cache-dir --upgrade pip && \
     dnf -y clean all --enablerepo='*'
 
 # Setup Node.js and Yarn
 ENV NPM_RUN=start \
     PLATFORM="el9" \
-    NODEJS_VERSION=18 \
+    NODEJS_VERSION=24 \
     NAME=nodejs \
     NVM_DIR=/usr/local/nvm \
     NPM_CONFIG_PREFIX=$HOME/.npm-global \
@@ -168,7 +168,7 @@ RUN pip install frappe-bench \
 
 # Setup Frappe
 WORKDIR /home/frappe
-ARG FRAPPE_BRANCH=version-15
+ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
