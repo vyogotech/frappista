@@ -135,7 +135,8 @@ jobs:
       - name: Build and Push Frappe - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          CACHE_FLAGS="--cache-from=docker.io/vyogo/frappista-cache:${{ needs.setup.outputs.version }} --cache-to=docker.io/vyogo/frappista-cache:${{ needs.setup.outputs.version }}"
+          CACHE_REPO="docker.io/vyogo/frappista-cache-${{ needs.setup.outputs.version }}"
+          CACHE_FLAGS="--cache-from=$CACHE_REPO --cache-to=$CACHE_REPO"
           make build-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} CACHE_FLAGS="$CACHE_FLAGS"
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
@@ -146,7 +147,8 @@ jobs:
       - name: Build and Push Frappe - ARM64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          CACHE_FLAGS="--cache-from=docker.io/vyogo/frappista-cache:${{ needs.setup.outputs.version }} --cache-to=docker.io/vyogo/frappista-cache:${{ needs.setup.outputs.version }}"
+          CACHE_REPO="docker.io/vyogo/frappista-cache-${{ needs.setup.outputs.version }}"
+          CACHE_FLAGS="--cache-from=$CACHE_REPO --cache-to=$CACHE_REPO"
           make build-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} CACHE_FLAGS="$CACHE_FLAGS"
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
