@@ -61,8 +61,9 @@ RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     [[ "$(id redis)" == "uid=1001(redis)"* ]] && usermod -l frappe -u 1001 -d /home/frappe -m -c "Frappe Bench" redis
 
 # Setup Python
-# Default to Python 3.11 for compatibility with version-15 and earlier
-# Use Python 3.12 for version-16 by passing --build-arg PYTHON_VERSION=3.12
+# Default to Python 3.11 for all Frappe versions
+# Note: Frappe v16 pyproject.toml lists Python 3.14 (not yet released)
+# Python 3.11 is tested and works. Pass --build-arg PYTHON_VERSION=3.12 to use a different version.
 ARG PYTHON_VERSION=3.11
 ENV PYTHON_VERSION=${PYTHON_VERSION} \
     PATH=$HOME/.local/bin/:$PATH \
@@ -77,8 +78,6 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
 RUN INSTALL_PKGS="python${PYTHON_VERSION} python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip" && \
     dnf -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
-    PYTHON_VERSION_SHORT=$(echo ${PYTHON_VERSION} | tr -d '.') && \
-    export CNB_STACK_ID=com.redhat.stacks.ubi9-python-${PYTHON_VERSION_SHORT} && \
     alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1 && \
     alternatives --set python /usr/bin/python${PYTHON_VERSION} && \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \

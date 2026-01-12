@@ -4,10 +4,10 @@ REPO=vyogo
 FRAPPE_VERSION?=develop
 
 # Determine Python version based on Frappe version
-# Note: Frappe v16 officially requires Python 3.14 (not yet available in repos)
-# For now, using Python 3.11 which works. Update to 3.12+ when available.
-# version-16 and later will use Python 3.11 (to be updated to 3.12+ later)
-# earlier versions use Python 3.11
+# Note: Frappe v16 pyproject.toml lists Python 3.14 requirement (aspirational, not yet released)
+# For now, using Python 3.11 which works with all current versions.
+# Update to Python 3.12+ when it becomes available and tested.
+# All versions currently use Python 3.11
 PYTHON_VERSION=3.11
 
 # Local image names (no registry prefix)
