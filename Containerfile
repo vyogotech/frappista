@@ -168,7 +168,7 @@ RUN pip install frappe-bench \
 
 # Setup Frappe
 WORKDIR /home/frappe
-ARG FRAPPE_BRANCH=version-16
+ARG FRAPPE_BRANCH=develop
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
