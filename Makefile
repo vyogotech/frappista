@@ -3,9 +3,9 @@ REGISTRY=docker.io
 REPO=vyogo
 FRAPPE_VERSION?=version-16
 # Local image names (no registry prefix)
-LOCAL_IMAGE_NAME=frappe:s2i-$(FRAPPE_VERSION)
-LOCAL_ERP_IMAGE_NAME=erpnext:sne-$(FRAPPE_VERSION)
-LOCAL_CRM_IMAGE_NAME=crm:sne-$(FRAPPE_VERSION)
+LOCAL_IMAGE_NAME=localhost/frappe:s2i-$(FRAPPE_VERSION)
+LOCAL_ERP_IMAGE_NAME=localhost/erpnext:sne-$(FRAPPE_VERSION)
+LOCAL_CRM_IMAGE_NAME=localhost/crm:sne-$(FRAPPE_VERSION)
 # Registry image names (with registry prefix for pushing)
 IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-$(FRAPPE_VERSION)
 ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-$(FRAPPE_VERSION)
