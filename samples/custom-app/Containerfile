@@ -1,0 +1,20 @@
+# Example: Packaging a custom app using Frappista S2I image
+# This is useful if you want to build a standalone image for your app
+
+# Use the Frappista S2I image as base
+FROM docker.io/vyogo/frappe:s2i-version-15
+
+# Set environment variables for the build
+# These can be used by the S2I assemble script
+ENV FRAPPE_SITE_NAME=dev.localhost
+
+# Copy your configuration files
+COPY apps.json /tmp/apps.json
+COPY site-config.json /tmp/site-config.json
+
+# If you need to run custom setup steps
+# RUN cd /home/frappe/frappe-bench && bench get-app ...
+
+# The S2I base image already has the entrypoint and command set up.
+# You can override them if needed, but usually the defaults are enough
+# to start the web and worker processes.

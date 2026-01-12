@@ -1,0 +1,7 @@
+{
+    "db_name": "dev_db",
+    "db_password": "dev_password",
+    "db_type": "mariadb",
+    "db_host": "mariadb",
+    "developer_mode": 1
+}
