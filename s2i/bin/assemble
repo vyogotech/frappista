@@ -8,6 +8,12 @@ log() {
 # Function to start MariaDB service
 start_mariadb() {
     mkdir -p /tmp/pids
+    # Kill any stale mysqld left over from a previous layer or init
+    if pgrep -x mysqld >/dev/null 2>&1; then
+        log "Killing existing mysqld process..."
+        pkill -x mysqld 2>/dev/null || true
+        sleep 2
+    fi
     if [[ -f /var/.secure_installation_done ]]; then
         # Layered build: DB already initialized, start mysqld directly
         log "Starting MariaDB (existing data)..."
