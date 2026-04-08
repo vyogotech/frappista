@@ -7,14 +7,23 @@ log() {
 
 # Function to start MariaDB service
 start_mariadb() {
-    log "Starting MariaDB service."
-    run-mysqld &
+    mkdir -p /tmp/pids
+    if [[ -f /var/.secure_installation_done ]]; then
+        # Layered build: DB already initialized, start mysqld directly
+        log "Starting MariaDB (existing data)..."
+        mysqld --pid-file=/tmp/pids/mysqld.pid &
+    else
+        # Fresh build: use SCL init wrapper
+        log "Starting MariaDB (first init)..."
+        run-mysqld &
+    fi
     log "MariaDB service started."
 }
 
 start_redis()
 {
     log "Starting Redis server."
+    mkdir -p /tmp/pids
     redis-server --daemonize yes --pidfile /tmp/pids/redis.pid
     log "Redis server started."
 }
@@ -30,9 +39,15 @@ wait_for_redis() {
 # Function to wait for MariaDB to be ready
 wait_for_mariadb() {
     log "Waiting for MariaDB to be ready..."
-    until mysqladmin ping &>/dev/null; do
+    local retries=0
+    until mysqladmin -u root -p"${MYSQL_ROOT_PASSWORD}" ping &>/dev/null || mysqladmin ping &>/dev/null; do
         echo "MariaDB is not ready yet. Retrying in 2 seconds..."
         sleep 2
+        retries=$((retries + 1))
+        if [[ $retries -ge 30 ]]; then
+            log "[ERROR] MariaDB failed to start after 60 seconds."
+            exit 1
+        fi
     done
     log "MariaDB is ready."
 }
