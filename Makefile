@@ -6,10 +6,12 @@ FRAPPE_VERSION?=version-16
 LOCAL_IMAGE_NAME=localhost/frappe:s2i-$(FRAPPE_VERSION)
 LOCAL_ERP_IMAGE_NAME=localhost/erpnext:sne-$(FRAPPE_VERSION)
 LOCAL_CRM_IMAGE_NAME=localhost/crm:sne-$(FRAPPE_VERSION)
+LOCAL_CENTRAL_SITE_IMAGE_NAME=localhost/central-site:sne-$(FRAPPE_VERSION)
 # Registry image names (with registry prefix for pushing)
 IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-$(FRAPPE_VERSION)
 ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-$(FRAPPE_VERSION)
 CRM_IMAGE_NAME=$(REGISTRY)/$(REPO)/crm:sne-$(FRAPPE_VERSION)
+CENTRAL_SITE_IMAGE_NAME=$(REGISTRY)/$(REPO)/central-site:sne-$(FRAPPE_VERSION)
 
 # Cache configuration
 CACHE_REPO=$(REGISTRY)/$(REPO)/frappista-cache-$(FRAPPE_VERSION)
@@ -33,6 +35,9 @@ help:
 	@echo " erpnext - Build ERPNext image"
 	@echo " erpnext-amd64 - Build ERPNext for AMD64"
 	@echo " erpnext-arm64 - Build ERPNext for ARM64"
+	@echo " central-site - Build central-site image (current arch)"
+	@echo " central-site-amd64 - Build central-site for AMD64"
+	@echo " central-site-arm64 - Build central-site for ARM64"
 	@echo " clean - Remove all images"
 
 # Build for current architecture
@@ -137,8 +142,10 @@ push-erpnext:
 clean:
 	podman rmi -f $(LOCAL_IMAGE_NAME) $(LOCAL_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-arm64 || true
 	podman rmi -f $(LOCAL_ERP_IMAGE_NAME) $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_ERP_IMAGE_NAME)-arm64 || true
+	podman rmi -f $(LOCAL_CENTRAL_SITE_IMAGE_NAME) $(LOCAL_CENTRAL_SITE_IMAGE_NAME)-amd64 $(LOCAL_CENTRAL_SITE_IMAGE_NAME)-arm64 || true
 	podman rmi -f $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64 || true
 	podman rmi -f $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64 || true
+	podman rmi -f $(CENTRAL_SITE_IMAGE_NAME) $(CENTRAL_SITE_IMAGE_NAME)-amd64 $(CENTRAL_SITE_IMAGE_NAME)-arm64 || true
 
 clean-manifests: remove-manifests remove-erpnext-manifests
 
@@ -199,3 +206,37 @@ frappe-crm-v1392-manifest: remove-frappe-crm-manifests
 	podman manifest create $(CRM_IMAGE_NAME)-v1392 $(CRM_IMAGE_NAME)-v1392-amd64 $(CRM_IMAGE_NAME)-v1392-arm64
 	podman manifest push --all $(CRM_IMAGE_NAME)-v1392 docker://$(CRM_IMAGE_NAME)-v1392
 	@echo "Successfully pushed $(CRM_IMAGE_NAME)-v1392"
+
+# Central-site builds — layers 3 apps on top of the ERPNext SNE image via S2I.
+# The central-site repo (with submodules checked out) is the S2I source.
+# apps.json uses "source" fields to copy apps from checked-out submodule dirs.
+# Set CENTRAL_SITE_SRC to the path of your central-site checkout (with submodules inited).
+CENTRAL_SITE_SRC?=../central-site
+.PHONY: central-site central-site-amd64 central-site-arm64
+central-site:
+	./s2i-podman.sh $(CENTRAL_SITE_SRC) $(LOCAL_CENTRAL_SITE_IMAGE_NAME) $(ERP_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+
+central-site-amd64:
+	./s2i-podman.sh --arch amd64 $(CENTRAL_SITE_SRC) $(LOCAL_CENTRAL_SITE_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+
+central-site-arm64:
+	./s2i-podman.sh --arch arm64 $(CENTRAL_SITE_SRC) $(LOCAL_CENTRAL_SITE_IMAGE_NAME)-arm64 $(ERP_IMAGE_NAME) --frappe-branch=$(FRAPPE_VERSION)
+
+# Remove central-site manifests
+.PHONY: remove-central-site-manifests
+remove-central-site-manifests:
+	podman manifest exists $(CENTRAL_SITE_IMAGE_NAME) && podman manifest rm $(CENTRAL_SITE_IMAGE_NAME) || true
+
+# Push central-site multi-arch manifest (assumes images already built)
+.PHONY: push-central-site
+push-central-site: remove-central-site-manifests
+	@echo "Tagging and pushing central-site AMD64..."
+	podman tag $(LOCAL_CENTRAL_SITE_IMAGE_NAME)-amd64 $(CENTRAL_SITE_IMAGE_NAME)-amd64
+	podman push $(CENTRAL_SITE_IMAGE_NAME)-amd64
+	@echo "Tagging and pushing central-site ARM64..."
+	podman tag $(LOCAL_CENTRAL_SITE_IMAGE_NAME)-arm64 $(CENTRAL_SITE_IMAGE_NAME)-arm64
+	podman push $(CENTRAL_SITE_IMAGE_NAME)-arm64
+	@echo "Creating multi-arch manifest..."
+	podman manifest create $(CENTRAL_SITE_IMAGE_NAME) $(CENTRAL_SITE_IMAGE_NAME)-amd64 $(CENTRAL_SITE_IMAGE_NAME)-arm64
+	podman manifest push --all $(CENTRAL_SITE_IMAGE_NAME) docker://$(CENTRAL_SITE_IMAGE_NAME)
+	@echo "Successfully pushed $(CENTRAL_SITE_IMAGE_NAME)"

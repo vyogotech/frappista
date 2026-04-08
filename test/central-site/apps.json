@@ -1,0 +1,14 @@
+[
+    {
+        "name": "erpnext_australian_localisation",
+        "source": "ERPNext-Australian-Localisation"
+    },
+    {
+        "name": "payments",
+        "source": "payments"
+    },
+    {
+        "name": "saas_platform",
+        "source": "saas_platform"
+    }
+]

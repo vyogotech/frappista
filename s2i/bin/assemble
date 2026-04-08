@@ -204,18 +204,47 @@ if [[ -f /tmp/src/apps.json ]]; then
     log "Installing Frappe apps from apps.json..."
     jq -c '.[]' /tmp/src/apps.json | while read app; do
         app_name=$(echo $app | jq -r '.name')
-        app_url=$(echo $app | jq -r '.url')
-        app_branch=$(echo $app | jq -r '.branch')
-        if [[ -z "$app_name" || -z "$app_url" || -z "$app_branch" ]]; then
-            log "[ERROR] Missing app details in apps.json. Skipping..."
+        app_source=$(echo $app | jq -r '.source // empty')
+        app_url=$(echo $app | jq -r '.url // empty')
+        app_branch=$(echo $app | jq -r '.branch // empty')
+
+        if [[ -z "$app_name" ]]; then
+            log "[ERROR] Missing app name in apps.json entry. Skipping..."
             continue
         fi
-        log "Installing $app_name from $app_url ($app_branch)..."
-        if ! bench get-app "$app_name" "$app_url" --branch "$app_branch"; then
-            log "[ERROR] Failed to install $app_name from $app_url ($app_branch). Skipping..."
-            continue
+
+        if [[ -n "$app_source" ]]; then
+            # Local source mode: copy from /tmp/src/<source> into apps/<name>
+            local_path="/tmp/src/${app_source}"
+            if [[ ! -d "$local_path" ]]; then
+                log "[ERROR] Local source directory '$local_path' not found. Skipping $app_name..."
+                continue
+            fi
+            log "Installing $app_name from local source ($app_source)..."
+            mkdir -p "$bench_dir/apps/$app_name"
+            cp -Rf "$local_path/"* "$bench_dir/apps/$app_name/"
+            find "$bench_dir/apps/$app_name" -name .git -type d -exec rm -rf {} + 2>/dev/null || true
+            cd "$bench_dir"
+            env/bin/python3 -m pip install -e "./apps/$app_name"
+        else
+            # Git mode: fetch from URL
+            if [[ -z "$app_url" || -z "$app_branch" ]]; then
+                log "[ERROR] Missing url/branch for $app_name in apps.json. Skipping..."
+                continue
+            fi
+            log "Installing $app_name from $app_url ($app_branch)..."
+            if ! bench get-app "$app_name" "$app_url" --branch "$app_branch"; then
+                log "[ERROR] Failed to install $app_name from $app_url ($app_branch). Skipping..."
+                continue
+            fi
         fi
     done
+
+    # Rebuild apps.txt and assets after processing all apps
+    cd "$bench_dir"
+    ls -1 "$bench_dir/apps" > "$bench_dir/sites/apps.txt"
+    log "Updated apps.txt: $(cat $bench_dir/sites/apps.txt)"
+    bench build --production
 fi
 
 # Handle custom app if detected
@@ -271,6 +300,13 @@ else
         create_site "$site_name" "admin"
     else
         log "Default site $site_name already exists. Skipping creation..."
+        log "Installing any new apps on existing site $site_name..."
+        apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+        for app in "${apps_list[@]}"; do
+            app_name=$(basename "$app")
+            log "Installing $app_name on $site_name..."
+            bench --site "$site_name" install-app "$app_name" || log "App $app_name may already be installed, continuing..."
+        done
     fi
 fi
 
