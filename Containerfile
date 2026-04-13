@@ -46,15 +46,22 @@ RUN ARCH=$(uname -m) && \
     fi && \
     dnf clean all
 
-# Setup Redis
+# Setup Redis — compile from source with MALLOC=libc to avoid jemalloc segfaults
+# under QEMU emulation (e.g. running amd64 images on Apple Silicon Macs).
 ENV REDIS_VERSION=7 \
+    REDIS_SOURCE_VERSION=7.2.7 \
     HOME=/var/lib/redis
 RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     usermod -l redis -aG redis -c 'Redis Server' default &> /dev/null && \
-    dnf -y module enable redis:$REDIS_VERSION && \
-    INSTALL_PKGS="policycoreutils redis" && \
-    dnf install -y --setopt=tsflags=nodocs $INSTALL_PKGS && \
-    rpm -V $INSTALL_PKGS && \
+    dnf -y install policycoreutils make gcc && \
+    cd /tmp && \
+    curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" \
+      -o redis.tar.gz && \
+    tar xzf redis.tar.gz && \
+    cd "redis-${REDIS_SOURCE_VERSION}" && \
+    make MALLOC=libc CFLAGS="-fno-lto" -j1 && \
+    make install PREFIX=/usr && \
+    cd / && rm -rf /tmp/redis* && \
     dnf -y clean all --enablerepo='*' && \
     redis-server --version | grep -qe "^Redis server v=$REDIS_VERSION\." && echo "Found VERSION $REDIS_VERSION" && \
     mkdir -p /var/lib/redis/data && chown -R redis.0 /var/lib/redis && \
