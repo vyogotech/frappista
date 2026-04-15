@@ -45,9 +45,15 @@ if redis-server --daemonize yes --pidfile /tmp/pids/redis.pid &> /var/log/redis.
   if kill -0 $(cat /tmp/pids/redis.pid 2>/dev/null) 2>/dev/null; then
     log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
   else
+    if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+      error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
+    fi
     error "Redis process started but died immediately. Check /var/log/redis.log for details."
   fi
 else
+  if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+    error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
+  fi
   error "Failed to start Redis server."
 fi
 
@@ -90,6 +96,25 @@ for app in "${apps_list[@]}"; do
 done
 ls -1 apps/ > sites/apps.txt
 log "All apps registered."
+
+# Restore pre-built assets from image cache (populated during S2I assemble).
+# When sites/ is mounted as a volume, the built assets are wiped — this restores them.
+# Set ENABLE_ASSETS_CACHE=true to enable this feature.
+if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
+  if [ -d "/home/frappe/assets_cache" ] && [ -n "$(ls -A /home/frappe/assets_cache 2>/dev/null)" ]; then
+    if [ ! -d "sites/assets/frappe" ]; then
+      log "Restoring assets from image cache..."
+      mkdir -p sites/assets
+      cp -r /home/frappe/assets_cache/. sites/assets/
+      log "Assets restored."
+    else
+      log "Assets already present, skipping restore."
+    fi
+  else
+    log "Warning: No assets_cache found. Assets will be built by bench start."
+  fi
+fi
+
 # Start Frappe/ERPNext with bench in foreground
 log "Starting Frappe/ERPNext with bench..."
 #allow remote connections to mariadb
