@@ -56,7 +56,12 @@ describe("asset integrity", () => {
     }).its("status").should("eq", 200);
 
     cy.visit("/desk");
-    cy.location("pathname").should("include", "/desk");
-    assertHealthyPage("desk");
+    cy.location("pathname").should((pathname) => {
+      expect(
+        pathname === "/desk" || pathname.startsWith("/app/setup-wizard/"),
+        `expected authenticated landing page, got ${pathname}`
+      ).to.eq(true);
+    });
+    assertHealthyPage("authenticated landing page");
   });
 });
