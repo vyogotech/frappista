@@ -283,10 +283,10 @@ jobs:
 
       - name: Verify all bench processes running
         run: |
-          podman exec sne-test ps aux | grep -E "gunicorn|redis|mysql|node|esbuild" || true
+          podman exec sne-test ps aux | grep -E "redis|mysql|node|esbuild|python" || true
           PROCS=$(podman exec sne-test ps aux)
           FAIL=0
-          for proc in gunicorn mysqld redis-server; do
+          for proc in mysqld redis-server; do
             if echo "$PROCS" | grep -q "$proc"; then
               echo "$proc: running"
             else
@@ -294,6 +294,12 @@ jobs:
               FAIL=1
             fi
           done
+          if echo "$PROCS" | grep -Eq "node(.+esbuild| .*esbuild)"; then
+            echo "esbuild/watch: running"
+          else
+            echo "::error::esbuild/watch is NOT running"
+            FAIL=1
+          fi
           if [[ $FAIL -eq 1 ]]; then
             podman logs sne-test | tail -50
             exit 1
