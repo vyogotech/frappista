@@ -30,7 +30,9 @@ start_redis()
 {
     log "Starting Redis server."
     mkdir -p /tmp/pids
-    if ! redis-server --daemonize yes --pidfile /tmp/pids/redis.pid 2>/var/log/redis.log; then
+    mkdir -p /tmp/redis
+    rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
+    if ! redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid 2>/var/log/redis.log; then
         if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
             log "[ERROR] Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make build-arm64"
         fi
@@ -336,6 +338,9 @@ else
         done
     fi
 fi
+
+log "Clearing Frappe cache..."
+bench --site "$site_name" clear-cache || true
 
 log "Fixing permissions..."
 
