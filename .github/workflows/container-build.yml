@@ -206,14 +206,21 @@ jobs:
 
   smoke-test:
     needs: [setup, build-and-test]
-    if: needs.setup.outputs.should_build == 'true'
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install podman
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
+
+      - name: Install Cypress asset test dependencies
+        run: |
+          cd test/asset-integrity
+          npm install
 
       - name: Pull built image
         run: |
@@ -235,6 +242,7 @@ jobs:
       - name: Start SNE container
         run: |
           podman run -d --name sne-test \
+            -p 8001:8000 \
             -e MYSQL_ROOT_PASSWORD=ChangeMe \
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 \
             /usr/libexec/s2i/run
@@ -306,6 +314,15 @@ jobs:
           fi
           echo "All critical processes verified"
 
+      - name: Verify login and desk assets in Cypress
+        env:
+          BASE_URL: http://127.0.0.1:8001
+          ADMIN_USER: Administrator
+          ADMIN_PASSWORD: admin
+        run: |
+          cd test/asset-integrity
+          npm run cy:run
+
       - name: Dump logs on failure
         if: failure()
         run: |
@@ -315,6 +332,8 @@ jobs:
           podman exec sne-test cat /var/log/redis.log 2>/dev/null || true
           echo "=== MariaDB log ==="
           podman exec sne-test cat /var/log/mysqld.log 2>/dev/null || true
+          echo "=== Cypress screenshots ==="
+          find test/asset-integrity/cypress/screenshots -type f 2>/dev/null || true
 
       - name: Cleanup
         if: always()
