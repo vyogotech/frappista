@@ -219,7 +219,7 @@ jobs:
 
       - name: Install Cypress asset test dependencies
         run: |
-          cd test/asset-integrity
+          cd e2e_test/asset-integrity
           npm install
 
       - name: Pull built image
@@ -320,7 +320,7 @@ jobs:
           ADMIN_USER: Administrator
           ADMIN_PASSWORD: admin
         run: |
-          cd test/asset-integrity
+          cd e2e_test/asset-integrity
           npm run cy:run
 
       - name: Dump logs on failure
@@ -333,7 +333,7 @@ jobs:
           echo "=== MariaDB log ==="
           podman exec sne-test cat /var/log/mysqld.log 2>/dev/null || true
           echo "=== Cypress screenshots ==="
-          find test/asset-integrity/cypress/screenshots -type f 2>/dev/null || true
+          find e2e_test/asset-integrity/cypress/screenshots -type f 2>/dev/null || true
 
       - name: Cleanup
         if: always()
