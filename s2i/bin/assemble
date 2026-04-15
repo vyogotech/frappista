@@ -15,7 +15,16 @@ start_mariadb() {
 start_redis()
 {
     log "Starting Redis server."
-    redis-server --daemonize yes --pidfile /tmp/pids/redis.pid
+    mkdir -p /tmp/pids
+    mkdir -p /tmp/redis
+    rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
+    if ! redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid 2>/var/log/redis.log; then
+        if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+            log "[ERROR] Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make build-arm64"
+        fi
+        log "[ERROR] Failed to start Redis. Check /var/log/redis.log"
+        exit 1
+    fi
     log "Redis server started."
 }
 
@@ -274,7 +283,26 @@ else
     fi
 fi
 
+log "Clearing Frappe cache..."
+bench --site "$site_name" clear-cache || true
+
 log "Fixing permissions..."
+
+# Cache built assets so the run script can restore them when sites/ is
+# mounted as a volume (which would otherwise wipe the built assets).
+# Set ENABLE_ASSETS_CACHE=true to enable this feature.
+if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
+    cd "$bench_dir"
+    if [ -d "sites/assets" ] && [ -n "$(ls -A sites/assets 2>/dev/null)" ]; then
+        log "Caching built assets to /home/frappe/assets_cache..."
+        mkdir -p /home/frappe/assets_cache
+        rm -rf /home/frappe/assets_cache/*
+        cp -r sites/assets/. /home/frappe/assets_cache/
+        log "Assets cached successfully."
+    else
+        log "Warning: No assets found to cache."
+    fi
+fi
 
 
 # Return to initial directory
