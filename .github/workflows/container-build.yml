@@ -12,6 +12,10 @@ on:
     types: [upstream_app_update]
   workflow_dispatch:
     inputs:
+      image_ref:
+        description: 'Existing image reference to validate without rebuilding (for example: docker.io/vyogo/erpnext:sne-version-16)'
+        required: false
+        default: ''
       version:
         description: 'Version tag to publish (if empty, uses branch name)'
         required: false
@@ -107,7 +111,7 @@ jobs:
 
   build-and-test:
     needs: setup
-    if: needs.setup.outputs.should_build == 'true'
+    if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -190,3 +194,278 @@ jobs:
       - name: Check disk space after
         run: |
           df -h
+
+  smoke-test:
+    needs: [setup, build-and-test]
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Install Cypress asset test dependencies
+        run: |
+          cd e2e_test/asset-integrity
+          npm install
+
+      - name: Pull built image
+        run: |
+          podman pull docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
+
+      - name: Verify multi-arch manifest
+        if: github.event_name != 'pull_request'
+        run: |
+          podman manifest inspect docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }} | tee manifest.json
+          AMD64=$(jq '[.manifests[] | select(.platform.architecture=="amd64")] | length' manifest.json)
+          ARM64=$(jq '[.manifests[] | select(.platform.architecture=="arm64")] | length' manifest.json)
+          echo "amd64 entries: $AMD64, arm64 entries: $ARM64"
+          if [[ "$AMD64" -lt 1 || "$ARM64" -lt 1 ]]; then
+            echo "::error::Multi-arch manifest missing expected architectures (need both amd64 and arm64)"
+            exit 1
+          fi
+          echo "Multi-arch manifest verified: amd64=$AMD64, arm64=$ARM64"
+
+      - name: Start SNE container
+        run: |
+          podman run -d --name sne-test \
+            -p 8001:8000 \
+            -e MYSQL_ROOT_PASSWORD=ChangeMe \
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 \
+            /usr/libexec/s2i/run
+          echo "Container started, waiting for services..."
+
+      - name: Wait for services and verify
+        run: |
+          MAX_WAIT=180
+          ELAPSED=0
+
+          echo "--- Waiting for MariaDB ---"
+          until podman exec sne-test mysqladmin -u root -pChangeMe ping 2>/dev/null | grep -q "alive"; do
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+            if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+              echo "::error::MariaDB failed to start within ${MAX_WAIT}s"
+              podman logs sne-test
+              exit 1
+            fi
+            echo "  waiting... (${ELAPSED}s)"
+          done
+          echo "MariaDB is up (${ELAPSED}s)"
+
+          echo "--- Checking Redis ---"
+          if ! podman exec sne-test redis-cli ping | grep -q "PONG"; then
+            echo "::error::Redis is not responding"
+            podman exec sne-test cat /var/log/redis.log || true
+            podman logs sne-test
+            exit 1
+          fi
+          echo "Redis is up"
+
+          echo "--- Waiting for bench (port 8000) ---"
+          ELAPSED=0
+          until podman exec sne-test curl -sf http://localhost:8000/api/method/ping 2>/dev/null; do
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+            if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+              echo "::error::Bench failed to start within ${MAX_WAIT}s"
+              podman logs sne-test | tail -80
+              exit 1
+            fi
+            echo "  waiting for bench... (${ELAPSED}s)"
+          done
+          echo "Bench is serving requests (${ELAPSED}s)"
+
+      - name: Verify all bench processes running
+        run: |
+          podman exec sne-test ps aux | grep -E "redis|mysql|node|esbuild|python" || true
+          PROCS=$(podman exec sne-test ps aux)
+          FAIL=0
+          for proc in mysqld redis-server; do
+            if echo "$PROCS" | grep -q "$proc"; then
+              echo "$proc: running"
+            else
+              echo "::error::$proc is NOT running"
+              FAIL=1
+            fi
+          done
+          if echo "$PROCS" | grep -Eq "node(.+esbuild| .*esbuild)"; then
+            echo "esbuild/watch: running"
+          else
+            echo "::error::esbuild/watch is NOT running"
+            FAIL=1
+          fi
+          if [[ $FAIL -eq 1 ]]; then
+            podman logs sne-test | tail -50
+            exit 1
+          fi
+          echo "All critical processes verified"
+
+      - name: Verify login and desk assets in Cypress
+        env:
+          BASE_URL: http://127.0.0.1:8001
+          ADMIN_USER: Administrator
+          ADMIN_PASSWORD: admin
+        run: |
+          cd e2e_test/asset-integrity
+          npm run cy:run
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          podman logs sne-test 2>&1 | tail -150
+          echo "=== Redis log ==="
+          podman exec sne-test cat /var/log/redis.log 2>/dev/null || true
+          echo "=== MariaDB log ==="
+          podman exec sne-test cat /var/log/mysqld.log 2>/dev/null || true
+          echo "=== Cypress screenshots ==="
+          find e2e_test/asset-integrity/cypress/screenshots -type f 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          podman stop sne-test 2>/dev/null || true
+          podman rm sne-test 2>/dev/null || true
+
+  image-integrity-check:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.image_ref != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Install Cypress asset test dependencies
+        run: |
+          cd e2e_test/asset-integrity
+          npm install
+
+      - name: Pull requested image
+        env:
+          IMAGE_REF: ${{ github.event.inputs.image_ref }}
+        run: |
+          podman pull "$IMAGE_REF"
+
+      - name: Best-effort manifest inspection
+        env:
+          IMAGE_REF: ${{ github.event.inputs.image_ref }}
+        run: |
+          if podman manifest inspect "$IMAGE_REF" > manifest.json 2>/dev/null; then
+            echo "Image manifest details:"
+            cat manifest.json
+          else
+            echo "No manifest list available for $IMAGE_REF, continuing with direct image validation."
+          fi
+
+      - name: Start requested image
+        env:
+          IMAGE_REF: ${{ github.event.inputs.image_ref }}
+        run: |
+          podman run -d --name sne-test \
+            -p 8001:8000 \
+            -e MYSQL_ROOT_PASSWORD=ChangeMe \
+            "$IMAGE_REF" \
+            /usr/libexec/s2i/run
+          echo "Container started, waiting for services..."
+
+      - name: Wait for services and verify
+        run: |
+          MAX_WAIT=180
+          ELAPSED=0
+
+          echo "--- Waiting for MariaDB ---"
+          until podman exec sne-test mysqladmin -u root -pChangeMe ping 2>/dev/null | grep -q "alive"; do
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+            if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+              echo "::error::MariaDB failed to start within ${MAX_WAIT}s"
+              podman logs sne-test
+              exit 1
+            fi
+            echo "  waiting... (${ELAPSED}s)"
+          done
+          echo "MariaDB is up (${ELAPSED}s)"
+
+          echo "--- Checking Redis ---"
+          if ! podman exec sne-test redis-cli ping | grep -q "PONG"; then
+            echo "::error::Redis is not responding"
+            podman exec sne-test cat /var/log/redis.log || true
+            podman logs sne-test
+            exit 1
+          fi
+          echo "Redis is up"
+
+          echo "--- Waiting for bench (port 8000) ---"
+          ELAPSED=0
+          until podman exec sne-test curl -sf http://localhost:8000/api/method/ping 2>/dev/null; do
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+            if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+              echo "::error::Bench failed to start within ${MAX_WAIT}s"
+              podman logs sne-test | tail -80
+              exit 1
+            fi
+            echo "  waiting for bench... (${ELAPSED}s)"
+          done
+          echo "Bench is serving requests (${ELAPSED}s)"
+
+      - name: Verify all bench processes running
+        run: |
+          podman exec sne-test ps aux | grep -E "redis|mysql|node|esbuild|python" || true
+          PROCS=$(podman exec sne-test ps aux)
+          FAIL=0
+          for proc in mysqld redis-server; do
+            if echo "$PROCS" | grep -q "$proc"; then
+              echo "$proc: running"
+            else
+              echo "::error::$proc is NOT running"
+              FAIL=1
+            fi
+          done
+          if echo "$PROCS" | grep -Eq "node(.+esbuild| .*esbuild)"; then
+            echo "esbuild/watch: running"
+          else
+            echo "::error::esbuild/watch is NOT running"
+            FAIL=1
+          fi
+          if [[ $FAIL -eq 1 ]]; then
+            podman logs sne-test | tail -50
+            exit 1
+          fi
+          echo "All critical processes verified"
+
+      - name: Verify login and desk assets in Cypress
+        env:
+          BASE_URL: http://127.0.0.1:8001
+          ADMIN_USER: Administrator
+          ADMIN_PASSWORD: admin
+        run: |
+          cd e2e_test/asset-integrity
+          npm run cy:run
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          podman logs sne-test 2>&1 | tail -150
+          echo "=== Redis log ==="
+          podman exec sne-test cat /var/log/redis.log 2>/dev/null || true
+          echo "=== MariaDB log ==="
+          podman exec sne-test cat /var/log/mysqld.log 2>/dev/null || true
+          echo "=== Cypress screenshots ==="
+          find e2e_test/asset-integrity/cypress/screenshots -type f 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          podman stop sne-test 2>/dev/null || true
+          podman rm sne-test 2>/dev/null || true
