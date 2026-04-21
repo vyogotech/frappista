@@ -141,10 +141,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
-          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
+          wget https://github.com/openshift/source-to-image/releases/download/v1.6.1/source-to-image-v1.6.1-906fe48a-linux-amd64.tar.tar.gz
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
-          rm -rf s2i-temp source-to-image-*.tar.gz
+          rm -rf s2i-temp source-to-image-*.tar.tar.gz
 
       - name: Registry Login
         if: github.event_name != 'pull_request'
@@ -199,10 +199,10 @@ jobs:
           sudo apt-get install -y podman qemu-user-static
           echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
           sudo systemctl restart podman || true
-          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-arm64.tar.gz
-          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
+          wget https://github.com/openshift/source-to-image/releases/download/v1.6.1/source-to-image-v1.6.1-906fe48a-linux-arm64.tar.tar.gz
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
-          rm -rf s2i-temp source-to-image-*.tar.gz
+          rm -rf s2i-temp source-to-image-*.tar.tar.gz
 
       - name: Registry Login
         if: github.event_name != 'pull_request'
