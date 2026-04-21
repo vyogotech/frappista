@@ -50,6 +50,18 @@ ensure_frappe_esbuild_runtime() {
   cd /home/frappe/frappe-bench
 }
 
+# True when this process thinks it is an x86_64 userspace binary running under
+# QEMU (typical when someone runs the amd64 image tag on Apple Silicon). Go
+# programs such as esbuild are not reliable here; skip heavy bench builds unless
+# the operator explicitly forces them.
+guest_x86_under_qemu() {
+  [[ "$(uname -m)" != "x86_64" ]] && return 1
+  if [[ -r /proc/cpuinfo ]] && grep -qiE 'qemu|tcg' /proc/cpuinfo; then
+    return 0
+  fi
+  return 1
+}
+
 # Create pid directory
 mkdir -p /tmp/pids
 mkdir -p /tmp/redis
@@ -138,8 +150,19 @@ ls -1 apps/ > sites/apps.txt
 log "All apps registered."
 
 if [[ "$NEED_REBUILD" == "true" ]]; then
-  log "New apps detected — rebuilding assets (one-shot bench build)..."
-  bench build --production || log "WARNING: bench build failed; assets from assemble may still work."
+  if guest_x86_under_qemu && [[ "${FORCE_BENCH_BUILD_UNDER_QEMU:-false}" != "true" ]]; then
+    log "Skipping bench build --production: this container is linux/amd64 running under QEMU (common on Apple Silicon if the wrong image arch was pulled)."
+    log "esbuild (Go) often deadlocks or is SIGKILL/SIGTERM'd here. Use the ARM64 image instead, e.g.:"
+    log "  podman pull --platform linux/arm64 docker.io/vyogo/erpnext:sne-<tag>-arm64"
+    log "Or set FORCE_BENCH_BUILD_UNDER_QEMU=true to attempt bench build anyway (best-effort)."
+    log "Desk may lack JS/CSS for the newly mounted app until assets are built on native hardware or in CI."
+  else
+    if guest_x86_under_qemu; then
+      log "FORCE_BENCH_BUILD_UNDER_QEMU=true — attempting bench build despite QEMU (may fail or hang)."
+    fi
+    log "New apps detected — rebuilding assets (one-shot bench build)..."
+    bench build --production || log "WARNING: bench build failed; assets from assemble may still work."
+  fi
 fi
 
 # Restore pre-built assets from image cache (populated during S2I assemble).
