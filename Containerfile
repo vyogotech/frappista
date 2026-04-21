@@ -196,14 +196,24 @@ RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
     bench set-config --global redis_queue "redis://localhost:6379" && \
     bench set-config --global redis_socketio "redis://localhost:6379"
 
-# The base image is linux/amd64-only, so RUN steps always execute as amd64
-# (even when building with --platform linux/arm64). bench init therefore
-# installs only @esbuild/linux-x64. Force-install the arm64 optional package
-# too so bench build works on real aarch64 hosts (Apple Silicon, ARM servers).
-RUN cd /home/frappe/frappe-bench/apps/frappe && \
-    yarn add --dev --ignore-engines --silent \
-        "@esbuild/linux-arm64@${ESBUILD_VERSION}" && \
-    chown -R 1001:0 node_modules && chmod -R ug+rwX node_modules
+# The base image is linux/amd64-only, so every RUN step executes as amd64
+# even when building with --platform linux/arm64. bench init therefore only
+# installs @esbuild/linux-x64. Download and unpack the arm64 binary package
+# directly (bypassing yarn/npm arch checks) so bench build works on native
+# aarch64 hosts (Apple Silicon, ARM servers) at runtime.
+RUN ESBUILD_ARM64_PKG="@esbuild/linux-arm64" && \
+    ESBUILD_TGZ="esbuild-linux-arm64-${ESBUILD_VERSION}.tgz" && \
+    NPM_REGISTRY="https://registry.npmjs.org" && \
+    PKG_URL="${NPM_REGISTRY}/@esbuild/linux-arm64/-/linux-arm64-${ESBUILD_VERSION}.tgz" && \
+    DEST="/home/frappe/frappe-bench/apps/frappe/node_modules/@esbuild/linux-arm64" && \
+    mkdir -p /tmp/esbuild-arm64 && \
+    curl -fsSL "$PKG_URL" -o /tmp/esbuild-arm64/pkg.tgz && \
+    tar -xzf /tmp/esbuild-arm64/pkg.tgz -C /tmp/esbuild-arm64 && \
+    mkdir -p "$DEST" && \
+    cp -r /tmp/esbuild-arm64/package/. "$DEST/" && \
+    chmod +x "$DEST/bin/esbuild" 2>/dev/null || true && \
+    rm -rf /tmp/esbuild-arm64 && \
+    chown -R 1001:0 "$DEST" && chmod -R ug+rwX "$DEST"
 
 # Expose ports
 EXPOSE 8000
