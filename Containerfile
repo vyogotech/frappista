@@ -196,6 +196,15 @@ RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
     bench set-config --global redis_queue "redis://localhost:6379" && \
     bench set-config --global redis_socketio "redis://localhost:6379"
 
+# The base image is linux/amd64-only, so RUN steps always execute as amd64
+# (even when building with --platform linux/arm64). bench init therefore
+# installs only @esbuild/linux-x64. Force-install the arm64 optional package
+# too so bench build works on real aarch64 hosts (Apple Silicon, ARM servers).
+RUN cd /home/frappe/frappe-bench/apps/frappe && \
+    yarn add --dev --ignore-engines --silent \
+        "@esbuild/linux-arm64@${ESBUILD_VERSION}" && \
+    chown -R 1001:0 node_modules && chmod -R ug+rwX node_modules
+
 # Expose ports
 EXPOSE 8000
 
