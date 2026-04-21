@@ -64,7 +64,7 @@ jobs:
           else
             IMAGE_TAG="$REF_NAME"
           fi
-          if [[ "$GITHUB_REF" == refs/tags/v* || "${{ github.event.inputs.version }}" != "" || "$REF_NAME" == "version-15" || "$REF_NAME" == "version-16" || "$REF_NAME" == "develop" ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* || "${{ github.event.inputs.version }}" != "" || "$REF_NAME" == "version-15" || "$REF_NAME" == "version-16" || "$REF_NAME" == "develop" || "$REF_NAME" == "fix/arm64-esbuild-watch" ]]; then
             ENABLE_MULTIARCH="true"
           else
             ENABLE_MULTIARCH="false"
