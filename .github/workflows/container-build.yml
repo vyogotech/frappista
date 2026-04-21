@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.vars.outputs.version }}
+      image_tag: ${{ steps.vars.outputs.image_tag }}
       components: ${{ steps.components.outputs.components }}
       cache-key: ${{ steps.cache-key.outputs.hash }}
       should_build: ${{ steps.check_shas.outputs.should_build }}
@@ -45,14 +46,26 @@ jobs:
       - name: Set version tag
         id: vars
         run: |
+          REF_NAME="${{ github.ref_name }}"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           elif [[ "${{ github.event.inputs.version }}" != "" ]]; then
             VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$REF_NAME" == "version-15" || "$REF_NAME" == "version-16" || "$REF_NAME" == "develop" ]]; then
+            VERSION="$REF_NAME"
           else
-            VERSION="${{ github.ref_name }}"
+            VERSION="version-16"
           fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            IMAGE_TAG="$VERSION"
+          elif [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            IMAGE_TAG="${{ github.event.inputs.version }}"
+          else
+            IMAGE_TAG="$REF_NAME"
+          fi
+          IMAGE_TAG="${IMAGE_TAG//\//-}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Parse components
         id: components
@@ -141,24 +154,24 @@ jobs:
       - name: Build and Push Frappe - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          CACHE_REPO="docker.io/vyogo/frappista-cache-${{ needs.setup.outputs.version }}"
+          CACHE_REPO="docker.io/vyogo/frappista-cache-${{ needs.setup.outputs.image_tag }}"
           CACHE_FLAGS="--cache-from=$CACHE_REPO"
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             CACHE_FLAGS="$CACHE_FLAGS --cache-to=$CACHE_REPO"
           fi
-          make build-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} CACHE_FLAGS="$CACHE_FLAGS"
+          make build-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }} CACHE_FLAGS="$CACHE_FLAGS"
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            make push-only-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+            make push-only-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           fi
 
       - name: Build and Push ERPNext - AMD64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+          make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
-            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
           fi
 
       - name: Check disk space after
@@ -199,24 +212,24 @@ jobs:
       - name: Build and Push Frappe - ARM64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          CACHE_REPO="docker.io/vyogo/frappista-cache-${{ needs.setup.outputs.version }}"
+          CACHE_REPO="docker.io/vyogo/frappista-cache-${{ needs.setup.outputs.image_tag }}"
           CACHE_FLAGS="--cache-from=$CACHE_REPO"
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             CACHE_FLAGS="$CACHE_FLAGS --cache-to=$CACHE_REPO"
           fi
-          make build-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} CACHE_FLAGS="$CACHE_FLAGS"
+          make build-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }} CACHE_FLAGS="$CACHE_FLAGS"
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            make push-only-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+            make push-only-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           fi
 
       - name: Build and Push ERPNext - ARM64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          make erpnext-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+          make erpnext-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-arm64
-            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-arm64
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64
           fi
 
       - name: Check disk space after
@@ -242,12 +255,12 @@ jobs:
       - name: Create Frappe Multi-arch Manifest
         if: contains(needs.setup.outputs.components, 'frappe')
         run: |
-          make create-frappe-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+          make create-frappe-manifest FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
 
       - name: Create ERPNext Multi-arch Manifest
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
-          make create-erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+          make create-erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
 
   smoke-test:
     needs: [setup, publish-manifests]
@@ -269,12 +282,12 @@ jobs:
 
       - name: Pull built image
         run: |
-          podman pull docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
+          podman pull docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
 
       - name: Verify multi-arch manifest
         if: github.event_name != 'pull_request'
         run: |
-          podman manifest inspect docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }} | tee manifest.json
+          podman manifest inspect docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }} | tee manifest.json
           AMD64=$(jq '[.manifests[] | select(.platform.architecture=="amd64")] | length' manifest.json)
           ARM64=$(jq '[.manifests[] | select(.platform.architecture=="arm64")] | length' manifest.json)
           echo "amd64 entries: $AMD64, arm64 entries: $ARM64"
@@ -289,7 +302,7 @@ jobs:
           podman run -d --name sne-test \
             -p 8001:8000 \
             -e MYSQL_ROOT_PASSWORD=ChangeMe \
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 \
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64 \
             /usr/libexec/s2i/run
           echo "Container started, waiting for services..."
 
