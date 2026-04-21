@@ -17,6 +17,39 @@ error() {
   exit 1
 }
 
+ensure_frappe_esbuild_runtime() {
+  local target_version="${ESBUILD_VERSION:-0.16.17}"
+  local frappe_path="/home/frappe/frappe-bench/apps/frappe"
+
+  if [[ ! -d "$frappe_path" ]]; then
+    log "Frappe app path not found at ${frappe_path}; skipping esbuild runtime check."
+    return 0
+  fi
+
+  cd "$frappe_path"
+  local current_version=""
+  if [[ -x node_modules/.bin/esbuild ]]; then
+    current_version=$(node_modules/.bin/esbuild --version 2>/dev/null || true)
+  fi
+
+  if [[ "$current_version" =~ ^0\.14\. ]]; then
+    if [[ "${ENABLE_RUNTIME_ESBUILD_PATCH:-false}" == "true" ]]; then
+      log "Runtime esbuild patch enabled. Upgrading from ${current_version} to ${target_version}..."
+      yarn add --dev --ignore-engines --silent "esbuild@${target_version}"
+      current_version=$(node_modules/.bin/esbuild --version 2>/dev/null || true)
+      log "esbuild version after runtime patch: ${current_version:-unknown}"
+    else
+      error "Incompatible esbuild version ${current_version} detected. Rebuild image with updated Frappista Containerfile or set ENABLE_RUNTIME_ESBUILD_PATCH=true for emergency runtime patching."
+    fi
+  elif [[ -n "$current_version" ]]; then
+    log "esbuild runtime version: ${current_version}"
+  else
+    log "esbuild binary not found in frappe node_modules; bench may install dependencies at startup."
+  fi
+
+  cd /home/frappe/frappe-bench
+}
+
 # Create pid directory
 mkdir -p /tmp/pids
 mkdir -p /tmp/redis
@@ -87,20 +120,27 @@ trap cleanup SIGINT SIGTERM
 # Let's to register the apps that are under /apps but not in apps.txt
 log "Registering apps..."
 cd /home/frappe/frappe-bench
+ensure_frappe_esbuild_runtime
 apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
 apps_in_txt=($(cat sites/apps.txt))
+NEED_REBUILD=false
 for app in "${apps_list[@]}"; do
   app_name=$(basename "$app")
-  env/bin/python3 -m pip install -e "./apps/${app_name}" || true # we do not fail if pip install fails
-  log "Building assets for custom app $app_name..."
+  env/bin/python3 -m pip install -e "./apps/${app_name}" || true
   if [[ ! " ${apps_in_txt[@]} " =~ " ${app_name} " ]]; then
-    log "Registered app: $app_name"
+    log "Registered new app: $app_name"
+    NEED_REBUILD=true
   else
     log "App $app_name already registered."
   fi
 done
 ls -1 apps/ > sites/apps.txt
 log "All apps registered."
+
+if [[ "$NEED_REBUILD" == "true" ]]; then
+  log "New apps detected — rebuilding assets (one-shot bench build)..."
+  bench build --production || log "WARNING: bench build failed; assets from assemble may still work."
+fi
 
 # Restore pre-built assets from image cache (populated during S2I assemble).
 # When sites/ is mounted as a volume, the built assets are wiped — this restores them.
@@ -127,6 +167,20 @@ mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SET PASSWORD FOR 'root'@'localhost'
 #allow remote connections to redis
 redis-cli CONFIG SET protected-mode no  || true
 bench --site all clear-cache || true
+
+# Disable the esbuild file-watcher by default. Assets are pre-built during
+# S2I assemble and rebuilt above when new apps are detected. The watcher is a
+# long-running Go process (esbuild) that crashes under QEMU emulation on
+# ARM64 hosts (e.g. Apple Silicon Macs running an amd64 image).
+# Set ENABLE_WATCH=true to re-enable it (e.g. for development on native x86).
+PROCFILE="/home/frappe/frappe-bench/Procfile"
+if [[ "${ENABLE_WATCH:-false}" != "true" && -f "$PROCFILE" ]]; then
+  if grep -q '^watch:' "$PROCFILE"; then
+    log "Disabling esbuild watch process in Procfile (set ENABLE_WATCH=true to override)."
+    sed -i 's/^watch:/#watch:/' "$PROCFILE"
+  fi
+fi
+
 bench start
 #allow remote connections to redis using redis-cli. use only for testing purpose
 

@@ -5,6 +5,34 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] $1"
 }
 
+ensure_frappe_esbuild() {
+    local bench_dir="$1"
+    local target_version="${ESBUILD_VERSION:-0.16.17}"
+    local frappe_path="${bench_dir}/apps/frappe"
+
+    if [[ ! -d "$frappe_path" ]]; then
+        log "Frappe app path not found at ${frappe_path}; skipping esbuild check."
+        return 0
+    fi
+
+    cd "$frappe_path"
+    local current_version=""
+    if [[ -x node_modules/.bin/esbuild ]]; then
+        current_version=$(node_modules/.bin/esbuild --version 2>/dev/null || true)
+    fi
+
+    if [[ -z "$current_version" || "$current_version" =~ ^0\.14\. ]]; then
+        log "Refreshing esbuild to ${target_version} (current: ${current_version:-missing})..."
+        yarn add --dev --ignore-engines --silent "esbuild@${target_version}"
+        current_version=$(node_modules/.bin/esbuild --version 2>/dev/null || true)
+        log "esbuild version after refresh: ${current_version:-unknown}"
+    else
+        log "Using existing esbuild version: ${current_version}"
+    fi
+
+    cd "$bench_dir"
+}
+
 # Function to start MariaDB service
 start_mariadb() {
     mkdir -p /tmp/pids
@@ -224,6 +252,7 @@ fi
 
 # Configure Redis
 cd "$bench_dir"
+ensure_frappe_esbuild "$bench_dir"
 bench set-config --global redis_cache "redis://localhost:6379"
 bench set-config --global redis_queue "redis://localhost:6379"
 bench set-config --global redis_socketio "redis://localhost:6379"

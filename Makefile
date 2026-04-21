@@ -96,6 +96,15 @@ push-manifest: remove-manifests push-only-amd64 push-only-arm64
 	podman manifest push --all $(IMAGE_NAME) docker://$(IMAGE_NAME)
 	@echo "Successfully pushed multi-arch manifest $(IMAGE_NAME)"
 
+# Create manifest from images already in registry (no local images needed)
+.PHONY: create-frappe-manifest
+create-frappe-manifest: remove-manifests
+	@echo "Creating multi-arch manifest for $(IMAGE_NAME) from registry images..."
+	podman manifest create $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64
+	@echo "Pushing manifest..."
+	podman manifest push --all $(IMAGE_NAME) docker://$(IMAGE_NAME)
+	@echo "Successfully pushed multi-arch manifest $(IMAGE_NAME)"
+
 
 # ERPNext builds
 .PHONY: erpnext erpnext-amd64 erpnext-arm64
@@ -117,6 +126,15 @@ remove-erpnext-manifests:
 # Create and push ERPNext multi-arch manifest (assumes images already built)
 .PHONY: erpnext-manifest
 erpnext-manifest: remove-erpnext-manifests push-erpnext
+
+# Create ERPNext manifest from images already in registry (no local images needed)
+.PHONY: create-erpnext-manifest
+create-erpnext-manifest: remove-erpnext-manifests
+	@echo "Creating multi-arch manifest for $(ERP_IMAGE_NAME) from registry images..."
+	podman manifest create $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64
+	@echo "Pushing manifest..."
+	podman manifest push --all $(ERP_IMAGE_NAME) docker://$(ERP_IMAGE_NAME)
+	@echo "Successfully pushed multi-arch manifest $(ERP_IMAGE_NAME)"
 
 # Push ERPNext images (only tag and push, no rebuild)
 .PHONY: push-erpnext

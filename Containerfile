@@ -5,11 +5,11 @@ USER root
 # Set labels
 LABEL maintainer="Dev <dev@vyogolabs.tech>"
 LABEL io.k8s.description="Single Node Environment for ERPNext" \
-     io.k8s.display-name="Frappe Single node env for Devs" \
-     io.openshift.expose-services="8080:http" \
-     io.openshift.tags="ERPNext,Single Node" \
-     io.openshift.s2i.scripts-url=image:///usr/libexec/s2i \
-     maintainer="vyogolabs.tech <dev@vyogolabs.tech>"
+    io.k8s.display-name="Frappe Single node env for Devs" \
+    io.openshift.expose-services="8080:http" \
+    io.openshift.tags="ERPNext,Single Node" \
+    io.openshift.s2i.scripts-url=image:///usr/libexec/s2i \
+    maintainer="vyogolabs.tech <dev@vyogolabs.tech>"
 
 # Install base dependencies
 RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
@@ -33,16 +33,16 @@ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.n
 # Install wkhtmltopdf based on architecture
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then \
-        #install jq for x86_64
-        dnf -y install jq && \
-        dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/x86_64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
-        dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.x86_64.rpm; \
+    #install jq for x86_64
+    dnf -y install jq && \
+    dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/x86_64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
+    dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.x86_64.rpm; \
     elif [ "$ARCH" = "aarch64" ]; then \
-        dnf -y install jq.aarch64 && \
-        dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/aarch64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
-        dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.aarch64.rpm; \
+    dnf -y install jq.aarch64 && \
+    dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/aarch64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
+    dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.aarch64.rpm; \
     else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
+    echo "Unsupported architecture: $ARCH" && exit 1; \
     fi && \
     dnf clean all
 
@@ -56,7 +56,7 @@ RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     dnf -y install policycoreutils make gcc && \
     cd /tmp && \
     curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" \
-      -o redis.tar.gz && \
+    -o redis.tar.gz && \
     tar xzf redis.tar.gz && \
     cd "redis-${REDIS_SOURCE_VERSION}" && \
     make MALLOC=libc CFLAGS="-fno-lto" -j1 && \
@@ -92,9 +92,10 @@ RUN INSTALL_PKGS="python3.14 python3.14-devel python3.14-pip" && \
 # Setup Node.js and Yarn
 ENV NPM_RUN=start \
     PLATFORM="el9" \
-    NODEJS_VERSION=24 \
+    NODEJS_VERSION=20 \
     NAME=nodejs \
     NVM_DIR=/usr/local/nvm \
+    ESBUILD_VERSION=0.16.17 \
     NPM_CONFIG_PREFIX=$HOME/.npm-global \
     PATH=$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH
 
@@ -169,7 +170,10 @@ RUN chmod +x /usr/libexec/s2i/* && \
 USER frappe
 
 # Install Frappe bench and dependencies
-RUN pip install frappe-bench \
+# frappe-bench >= 5.22 hard-codes `uv venv` during `bench init`.
+# Pin to the last pre-uv bench series so the image follows the standard
+# Python virtualenv flow instead of requiring an emulation-sensitive Rust binary.
+RUN pip install "click<8.2" "frappe-bench==5.21.5" \
     && pip install redis \
     && pip install mysql-connector-python
 
@@ -178,19 +182,27 @@ WORKDIR /home/frappe
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
-RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
-  --frappe-branch=${FRAPPE_BRANCH} \
-  --frappe-path=${FRAPPE_PATH} \
-  --no-backups \
-  --skip-redis-config-generation \
-  --verbose \
-  /home/frappe/frappe-bench && \
-  cd /home/frappe/frappe-bench && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
-  chown -R 1001:0 . && chmod -R ug+rwX . && \
-  bench set-config --global redis_cache "redis://localhost:6379" && \
-  bench set-config --global redis_queue "redis://localhost:6379" && \
-  bench set-config --global redis_socketio "redis://localhost:6379"
+RUN export YARN_IGNORE_ENGINES=1 && echo "using version ${FRAPPE_BRANCH}" && bench init \
+    --frappe-branch=${FRAPPE_BRANCH} \
+    --frappe-path=${FRAPPE_PATH} \
+    --no-backups \
+    --skip-assets \
+    --skip-redis-config-generation \
+    --verbose \
+    /home/frappe/frappe-bench && \
+    cd /home/frappe/frappe-bench && \
+    find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+    chown -R 1001:0 . && chmod -R ug+rwX . && \
+    bench set-config --global redis_cache "redis://localhost:6379" && \
+    bench set-config --global redis_queue "redis://localhost:6379" && \
+    bench set-config --global redis_socketio "redis://localhost:6379" && \
+    cd /home/frappe/frappe-bench/apps/frappe && \
+    yarn install --check-files --ignore-engines --silent && \
+    yarn add --dev --ignore-engines --silent "esbuild@${ESBUILD_VERSION}" && \
+    test -x node_modules/.bin/esbuild && \
+    node_modules/.bin/esbuild --version && \
+    cd /home/frappe/frappe-bench && \
+    export YARN_IGNORE_ENGINES=1 && bench build
 
 # Expose ports
 EXPOSE 8000

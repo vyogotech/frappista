@@ -2,10 +2,10 @@ name: Build and Publish Container Images
 
 on:
   push:
-    branches: [version-15, version-16, develop]
+    branches: [version-15, version-16, develop, fix/arm64-esbuild-watch]
     tags: ['v*']
   pull_request:
-    branches: [version-15, version-16, develop]
+    branches: [version-15, version-16, develop, fix/arm64-esbuild-watch]
   schedule:
     - cron: '0 0 * * *' # Build daily at midnight
   repository_dispatch:
@@ -109,7 +109,7 @@ jobs:
           echo "Available disk space before builds:"
           df -h
 
-  build-and-test:
+  build-amd64:
     needs: setup
     if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref
     runs-on: ubuntu-latest
@@ -127,9 +127,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman qemu-user-static
-          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman || true
+          sudo apt-get install -y podman
           wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
           mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
@@ -140,7 +138,6 @@ jobs:
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
 
-      # Build and Push Frappe - AMD64
       - name: Build and Push Frappe - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
@@ -154,7 +151,51 @@ jobs:
             make push-only-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
           fi
 
-      # Build and Push Frappe - ARM64
+      - name: Build and Push ERPNext - AMD64
+        if: contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
+          fi
+
+      - name: Check disk space after
+        run: |
+          df -h
+
+  build-arm64:
+    needs: setup
+    if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman qemu-user-static
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-arm64.tar.gz
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
+          sudo mv s2i-temp/s2i /usr/local/bin/
+          rm -rf s2i-temp source-to-image-*.tar.gz
+
+      - name: Registry Login
+        if: github.event_name != 'pull_request'
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+
       - name: Build and Push Frappe - ARM64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
@@ -168,25 +209,6 @@ jobs:
             make push-only-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
           fi
 
-      - name: Create Frappe Multi-arch Manifest
-        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
-        run: |
-          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make remove-manifests FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-          make push-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-
-      # Build and Push ERPNext - AMD64
-      - name: Build and Push ERPNext - AMD64
-        if: contains(needs.setup.outputs.components, 'erpnext')
-        run: |
-          make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
-            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-amd64
-          fi
-
-      # Build and Push ERPNext - ARM64
       - name: Build and Push ERPNext - ARM64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
@@ -197,19 +219,38 @@ jobs:
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.version }}-arm64
           fi
 
-      - name: Create ERPNext Multi-arch Manifest
-        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'erpnext')
-        run: |
-          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make remove-erpnext-manifests FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-          make erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }}
-
       - name: Check disk space after
         run: |
           df -h
 
+  publish-manifests:
+    needs: [setup, build-amd64, build-arm64]
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Registry Login
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+
+      - name: Create Frappe Multi-arch Manifest
+        if: contains(needs.setup.outputs.components, 'frappe')
+        run: |
+          make create-frappe-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+
+      - name: Create ERPNext Multi-arch Manifest
+        if: contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make create-erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }}
+
   smoke-test:
-    needs: [setup, build-and-test]
+    needs: [setup, publish-manifests]
     if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -295,7 +336,7 @@ jobs:
 
       - name: Verify all bench processes running
         run: |
-          podman exec sne-test ps aux | grep -E "redis|mysql|node|esbuild|python" || true
+          podman exec sne-test ps aux | grep -E "redis|mysql|node|python" || true
           PROCS=$(podman exec sne-test ps aux)
           FAIL=0
           for proc in mysqld redis-server; do
@@ -306,11 +347,11 @@ jobs:
               FAIL=1
             fi
           done
+          # esbuild watch is disabled by default in SNE mode (ENABLE_WATCH=false)
           if echo "$PROCS" | grep -Eq "node(.+esbuild| .*esbuild)"; then
-            echo "esbuild/watch: running"
+            echo "esbuild/watch: running (ENABLE_WATCH=true or default Procfile)"
           else
-            echo "::error::esbuild/watch is NOT running"
-            FAIL=1
+            echo "esbuild/watch: not running (expected — disabled in SNE mode)"
           fi
           if [[ $FAIL -eq 1 ]]; then
             podman logs sne-test | tail -50
@@ -433,7 +474,7 @@ jobs:
 
       - name: Verify all bench processes running
         run: |
-          podman exec sne-test ps aux | grep -E "redis|mysql|node|esbuild|python" || true
+          podman exec sne-test ps aux | grep -E "redis|mysql|node|python" || true
           PROCS=$(podman exec sne-test ps aux)
           FAIL=0
           for proc in mysqld redis-server; do
@@ -444,11 +485,11 @@ jobs:
               FAIL=1
             fi
           done
+          # esbuild watch is disabled by default in SNE mode (ENABLE_WATCH=false)
           if echo "$PROCS" | grep -Eq "node(.+esbuild| .*esbuild)"; then
-            echo "esbuild/watch: running"
+            echo "esbuild/watch: running (ENABLE_WATCH=true or default Procfile)"
           else
-            echo "::error::esbuild/watch is NOT running"
-            FAIL=1
+            echo "esbuild/watch: not running (expected — disabled in SNE mode)"
           fi
           if [[ $FAIL -eq 1 ]]; then
             podman logs sne-test | tail -50
