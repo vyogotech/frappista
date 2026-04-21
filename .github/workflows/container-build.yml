@@ -36,6 +36,7 @@ jobs:
     outputs:
       version: ${{ steps.vars.outputs.version }}
       image_tag: ${{ steps.vars.outputs.image_tag }}
+      enable_multiarch: ${{ steps.vars.outputs.enable_multiarch }}
       components: ${{ steps.components.outputs.components }}
       cache-key: ${{ steps.cache-key.outputs.hash }}
       should_build: ${{ steps.check_shas.outputs.should_build }}
@@ -63,9 +64,15 @@ jobs:
           else
             IMAGE_TAG="$REF_NAME"
           fi
+          if [[ "$GITHUB_REF" == refs/tags/v* || "${{ github.event.inputs.version }}" != "" || "$REF_NAME" == "version-15" || "$REF_NAME" == "version-16" || "$REF_NAME" == "develop" ]]; then
+            ENABLE_MULTIARCH="true"
+          else
+            ENABLE_MULTIARCH="false"
+          fi
           IMAGE_TAG="${IMAGE_TAG//\//-}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "enable_multiarch=$ENABLE_MULTIARCH" >> "$GITHUB_OUTPUT"
 
       - name: Parse components
         id: components
@@ -180,7 +187,7 @@ jobs:
 
   build-arm64:
     needs: setup
-    if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref
+    if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref && needs.setup.outputs.enable_multiarch == 'true'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -238,7 +245,7 @@ jobs:
 
   publish-manifests:
     needs: [setup, build-amd64, build-arm64]
-    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref && needs.setup.outputs.enable_multiarch == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -263,8 +270,8 @@ jobs:
           make create-erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.image_tag }} FRAPPE_BRANCH=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
 
   smoke-test:
-    needs: [setup, publish-manifests]
-    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
+    needs: [setup, build-amd64, build-arm64, publish-manifests]
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref && needs.build-amd64.result == 'success' && (needs.setup.outputs.enable_multiarch != 'true' || (needs.build-arm64.result == 'success' && needs.publish-manifests.result == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -285,7 +292,7 @@ jobs:
           podman pull docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
 
       - name: Verify multi-arch manifest
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && needs.setup.outputs.enable_multiarch == 'true'
         run: |
           podman manifest inspect docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }} | tee manifest.json
           AMD64=$(jq '[.manifests[] | select(.platform.architecture=="amd64")] | length' manifest.json)
