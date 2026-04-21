@@ -92,7 +92,7 @@ RUN INSTALL_PKGS="python3.14 python3.14-devel python3.14-pip" && \
 # Setup Node.js and Yarn
 ENV NPM_RUN=start \
     PLATFORM="el9" \
-    NODEJS_VERSION=20 \
+    NODEJS_VERSION=24 \
     NAME=nodejs \
     NVM_DIR=/usr/local/nvm \
     ESBUILD_VERSION=0.16.17 \
@@ -182,11 +182,10 @@ WORKDIR /home/frappe
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
-RUN export YARN_IGNORE_ENGINES=1 && echo "using version ${FRAPPE_BRANCH}" && bench init \
+RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
     --frappe-branch=${FRAPPE_BRANCH} \
     --frappe-path=${FRAPPE_PATH} \
     --no-backups \
-    --skip-assets \
     --skip-redis-config-generation \
     --verbose \
     /home/frappe/frappe-bench && \
@@ -195,14 +194,7 @@ RUN export YARN_IGNORE_ENGINES=1 && echo "using version ${FRAPPE_BRANCH}" && ben
     chown -R 1001:0 . && chmod -R ug+rwX . && \
     bench set-config --global redis_cache "redis://localhost:6379" && \
     bench set-config --global redis_queue "redis://localhost:6379" && \
-    bench set-config --global redis_socketio "redis://localhost:6379" && \
-    cd /home/frappe/frappe-bench/apps/frappe && \
-    yarn install --check-files --ignore-engines --silent && \
-    yarn add --dev --ignore-engines --silent "esbuild@${ESBUILD_VERSION}" && \
-    test -x node_modules/.bin/esbuild && \
-    node_modules/.bin/esbuild --version && \
-    cd /home/frappe/frappe-bench && \
-    export YARN_IGNORE_ENGINES=1 && bench build
+    bench set-config --global redis_socketio "redis://localhost:6379"
 
 # Expose ports
 EXPOSE 8000

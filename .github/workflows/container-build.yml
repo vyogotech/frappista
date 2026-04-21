@@ -188,7 +188,7 @@ jobs:
   build-arm64:
     needs: setup
     if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref && needs.setup.outputs.enable_multiarch == 'true'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -204,9 +204,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
-          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
-          sudo systemctl restart podman || true
-          wget https://github.com/openshift/source-to-image/releases/download/v1.6.1/source-to-image-v1.6.1-906fe48a-linux-arm64.tar.tar.gz
+          wget https://github.com/openshift/source-to-image/releases/download/v1.6.1/source-to-image-v1.6.1-906fe48a-linux-amd64.tar.tar.gz
           mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.tar.gz -C s2i-temp
           sudo mv s2i-temp/s2i /usr/local/bin/
           rm -rf s2i-temp source-to-image-*.tar.tar.gz
