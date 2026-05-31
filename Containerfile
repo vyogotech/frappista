@@ -1,6 +1,12 @@
+# syntax=docker/dockerfile:1
+# check=skip=InvalidBaseImagePlatform
 # Stage 1: Base image with tools and dependencies
+# quay.io/sclorg/mariadb-1011-c9s is amd64-only; arm64 builds use QEMU during RUN
+# steps and native aarch64 binaries (e.g. esbuild) are installed explicitly below.
 FROM quay.io/sclorg/mariadb-1011-c9s AS builder
 USER root
+
+ENV APP_ROOT=/opt/app-root
 
 # Set labels
 LABEL maintainer="Dev <dev@vyogolabs.tech>"
@@ -38,7 +44,7 @@ RUN ARCH=$(uname -m) && \
         dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/x86_64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
         dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.x86_64.rpm; \
     elif [ "$ARCH" = "aarch64" ]; then \
-        dnf -y install jq.aarch64 && \
+        dnf -y install jq && \
         dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/aarch64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
         dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.aarch64.rpm; \
     else \
@@ -46,15 +52,22 @@ RUN ARCH=$(uname -m) && \
     fi && \
     dnf clean all
 
-# Setup Redis
+# Setup Redis — compile from source with MALLOC=libc to avoid jemalloc segfaults
+# under QEMU emulation (e.g. running amd64 images on Apple Silicon Macs).
 ENV REDIS_VERSION=7 \
+    REDIS_SOURCE_VERSION=7.2.7 \
     HOME=/var/lib/redis
 RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     usermod -l redis -aG redis -c 'Redis Server' default &> /dev/null && \
-    dnf -y module enable redis:$REDIS_VERSION && \
-    INSTALL_PKGS="policycoreutils redis" && \
-    dnf install -y --setopt=tsflags=nodocs $INSTALL_PKGS && \
-    rpm -V $INSTALL_PKGS && \
+    dnf -y install policycoreutils make gcc && \
+    cd /tmp && \
+    curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" \
+      -o redis.tar.gz && \
+    tar xzf redis.tar.gz && \
+    cd "redis-${REDIS_SOURCE_VERSION}" && \
+    make MALLOC=libc CFLAGS="-fno-lto" -j1 && \
+    make install PREFIX=/usr && \
+    cd / && rm -rf /tmp/redis* && \
     dnf -y clean all --enablerepo='*' && \
     redis-server --version | grep -qe "^Redis server v=$REDIS_VERSION\." && echo "Found VERSION $REDIS_VERSION" && \
     mkdir -p /var/lib/redis/data && chown -R redis.0 /var/lib/redis && \
@@ -88,6 +101,7 @@ ENV NPM_RUN=start \
     NODEJS_VERSION=24 \
     NAME=nodejs \
     NVM_DIR=/usr/local/nvm \
+    ESBUILD_VERSION=0.16.17 \
     NPM_CONFIG_PREFIX=$HOME/.npm-global \
     PATH=$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH
 
@@ -107,7 +121,7 @@ ENV NAME=nginx \
     VERSION=0 \
     NGINX_CONFIGURATION_PATH=${APP_ROOT}/etc/nginx.d \
     NGINX_CONF_PATH=/etc/nginx/nginx.conf \
-    NGINX_DEFAULT_CONF_PATH=${NGINX_APP_ROOT}/etc/nginx.default.d \
+    NGINX_DEFAULT_CONF_PATH=${APP_ROOT}/etc/nginx.default.d \
     NGINX_CONTAINER_SCRIPTS_PATH=/usr/share/container-scripts/nginx \
     NGINX_APP_ROOT=${APP_ROOT} \
     NGINX_LOG_PATH=/var/log/nginx \
@@ -162,7 +176,10 @@ RUN chmod +x /usr/libexec/s2i/* && \
 USER frappe
 
 # Install Frappe bench and dependencies
-RUN pip install frappe-bench \
+# frappe-bench >= 5.22 hard-codes `uv venv` during `bench init`.
+# Pin to the last pre-uv bench series so the image follows the standard
+# Python virtualenv flow instead of requiring an emulation-sensitive Rust binary.
+RUN pip install "click<8.2" "frappe-bench==5.21.5" \
     && pip install redis \
     && pip install mysql-connector-python
 
@@ -184,6 +201,25 @@ RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
   bench set-config --global redis_cache "redis://localhost:6379" && \
   bench set-config --global redis_queue "redis://localhost:6379" && \
   bench set-config --global redis_socketio "redis://localhost:6379"
+
+# The base image is linux/amd64-only, so every RUN step executes as amd64
+# even when building with --platform linux/arm64. bench init therefore only
+# installs @esbuild/linux-x64. Download and unpack the arm64 binary package
+# directly (bypassing yarn/npm arch checks) so bench build works on native
+# aarch64 hosts (Apple Silicon, ARM servers) at runtime.
+RUN ESBUILD_ARM64_PKG="@esbuild/linux-arm64" && \
+    ESBUILD_TGZ="esbuild-linux-arm64-${ESBUILD_VERSION}.tgz" && \
+    NPM_REGISTRY="https://registry.npmjs.org" && \
+    PKG_URL="${NPM_REGISTRY}/@esbuild/linux-arm64/-/linux-arm64-${ESBUILD_VERSION}.tgz" && \
+    DEST="/home/frappe/frappe-bench/apps/frappe/node_modules/@esbuild/linux-arm64" && \
+    mkdir -p /tmp/esbuild-arm64 && \
+    curl -fsSL "$PKG_URL" -o /tmp/esbuild-arm64/pkg.tgz && \
+    tar -xzf /tmp/esbuild-arm64/pkg.tgz -C /tmp/esbuild-arm64 && \
+    mkdir -p "$DEST" && \
+    cp -r /tmp/esbuild-arm64/package/. "$DEST/" && \
+    chmod +x "$DEST/bin/esbuild" 2>/dev/null || true && \
+    rm -rf /tmp/esbuild-arm64 && \
+    chown -R 1001:0 "$DEST" && chmod -R ug+rwX "$DEST"
 
 # Expose ports
 EXPOSE 8000
