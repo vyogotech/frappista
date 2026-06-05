@@ -183,7 +183,7 @@ jobs:
           make frappe-app-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/frappe:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-amd64
+            podman tag localhost/frappe:sne-${{ needs.setup.outputs.image_tag }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-amd64
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-amd64
           fi
 
@@ -194,7 +194,7 @@ jobs:
           make frappe-app-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/frappe:sne-${{ needs.setup.outputs.version }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
+            podman tag localhost/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
           fi
 
@@ -212,7 +212,7 @@ jobs:
           make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
           fi
 
@@ -223,7 +223,7 @@ jobs:
           make erpnext-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.version }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64
+            podman tag localhost/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64
           fi
 
