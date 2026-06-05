@@ -124,8 +124,13 @@ log "Starting Frappe/ERPNext with bench..."
 #allow remote connections to mariadb
 mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${MYSQL_ROOT_PASSWORD}');  GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;" || true
 #allow remote connections to redis
+log "Switching off Redis protection mode"
 redis-cli CONFIG SET protected-mode no  || true
-bench --site all clear-cache || true
+log "Switching off Redis protection mode status - DONE with soft check"
+log "Clearing stale redis entries"
+redis-cli flushall || true
+log "Stale redis entries clearing - DONE with soft check "
+#S2I framework will manage this to run this in background
 bench start
 #allow remote connections to redis using redis-cli. use only for testing purpose
 
