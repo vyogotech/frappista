@@ -19,11 +19,6 @@ error() {
 
 # Create pid directory
 mkdir -p /tmp/pids
-mkdir -p /tmp/redis
-
-# Keep Redis ephemeral in SNE mode so stale cached HTML does not survive
-# image rebuilds and point at old hashed asset filenames.
-rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
 
 # Ensure required commands are available
 command -v mysqld >/dev/null 2>&1 || error "mysqld is not installed. Please install MariaDB."
@@ -32,7 +27,7 @@ command -v bench >/dev/null 2>&1 || error "bench is not installed. Please instal
 
 # Start MariaDB with proper daemonization
 log "Starting MariaDB..."
-if mysqld --datadir=/var/lib/mysql --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
+if mysqld --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
   sleep 2
   if kill -0 $(cat /tmp/pids/mysqld.pid 2>/dev/null) 2>/dev/null; then
     log "MariaDB started successfully with PID $(cat /tmp/pids/mysqld.pid)."
@@ -45,20 +40,14 @@ fi
 
 # Start Redis server with proper daemonization
 log "Starting Redis server..."
-if redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG &> /var/log/redis.log; then
+if redis-server --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG &> /var/log/redis.log; then
   sleep 1
   if kill -0 $(cat /tmp/pids/redis.pid 2>/dev/null) 2>/dev/null; then
     log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
   else
-    if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
-      error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
-    fi
     error "Redis process started but died immediately. Check /var/log/redis.log for details."
   fi
 else
-  if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
-    error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
-  fi
   error "Failed to start Redis server."
 fi
 
@@ -103,7 +92,7 @@ ls -1 apps/ > sites/apps.txt
 log "All apps registered."
 
 # Restore pre-built assets from image cache (populated during S2I assemble).
-# When sites/ is mounted as a volume, the built assets are wiped - this restores them.
+# When sites/ is mounted as a volume, the built assets are wiped — this restores them.
 # Set ENABLE_ASSETS_CACHE=true to enable this feature.
 if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
   if [ -d "/home/frappe/assets_cache" ] && [ -n "$(ls -A /home/frappe/assets_cache 2>/dev/null)" ]; then
@@ -119,13 +108,13 @@ if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
     log "Warning: No assets_cache found. Assets will be built by bench start."
   fi
 fi
+
 # Start Frappe/ERPNext with bench in foreground
 log "Starting Frappe/ERPNext with bench..."
 #allow remote connections to mariadb
 mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${MYSQL_ROOT_PASSWORD}');  GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;" || true
 #allow remote connections to redis
 redis-cli CONFIG SET protected-mode no  || true
-bench --site all clear-cache || true
 bench start
 #allow remote connections to redis using redis-cli. use only for testing purpose
 

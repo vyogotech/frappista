@@ -7,24 +7,22 @@ log() {
 
 # Function to start MariaDB service
 start_mariadb() {
-    log "Starting MariaDB service."
-    
-    if [ ! -d "/var/lib/mysql/mysql" ]; then
-        log "Initializing MariaDB data directory..."
-        mariadb-install-db --datadir=/var/lib/mysql > /dev/null
+    mkdir -p /tmp/pids
+    # Kill any stale mysqld left over from a previous layer or init
+    if pgrep -x mysqld >/dev/null 2>&1; then
+        log "Killing existing mysqld process..."
+        pkill -x mysqld 2>/dev/null || true
+        sleep 2
     fi
-    cat > /tmp/mysql-init.sql <<EOF
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
-CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
-CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-DELETE FROM mysql.user WHERE User='';
-FLUSH PRIVILEGES;
-EOF
-
-    mysqld --datadir=/var/lib/mysql --init-file=/tmp/mysql-init.sql &
+    if [[ -f /var/.secure_installation_done ]]; then
+        # Layered build: DB already initialized, start mysqld directly
+        log "Starting MariaDB (existing data)..."
+        mysqld --pid-file=/tmp/pids/mysqld.pid &
+    else
+        # Fresh build: use SCL init wrapper
+        log "Starting MariaDB (first init)..."
+        run-mysqld &
+    fi
     log "MariaDB service started."
 }
 
@@ -32,15 +30,7 @@ start_redis()
 {
     log "Starting Redis server."
     mkdir -p /tmp/pids
-    mkdir -p /tmp/redis
-    rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
-    if ! redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG 2>/var/log/redis.log; then
-        if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
-            log "[ERROR] Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make build-arm64"
-        fi
-        log "[ERROR] Failed to start Redis. Check /var/log/redis.log"
-        exit 1
-    fi
+    redis-server --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG
     log "Redis server started."
 }
 
@@ -55,14 +45,33 @@ wait_for_redis() {
 # Function to wait for MariaDB to be ready
 wait_for_mariadb() {
     log "Waiting for MariaDB to be ready..."
-    until mysqladmin ping &>/dev/null; do
+    local retries=0
+    until mysqladmin -u root -p"${MYSQL_ROOT_PASSWORD}" ping &>/dev/null || mysqladmin ping &>/dev/null; do
         echo "MariaDB is not ready yet. Retrying in 2 seconds..."
         sleep 2
+        retries=$((retries + 1))
+        if [[ $retries -ge 30 ]]; then
+            log "[ERROR] MariaDB failed to start after 60 seconds."
+            exit 1
+        fi
     done
     log "MariaDB is ready."
 }
 
-
+# Function to run secure installation
+run_secure_installation() {
+    log "Securing MySQL/MariaDB directly."
+    mysqladmin -u root password "$MYSQL_ROOT_PASSWORD" || mysqladmin -u root -p'' password "$MYSQL_ROOT_PASSWORD" || true
+    mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
+    DELETE FROM mysql.user WHERE User=''; 
+EOF
+    mysql -u root -p"$MYSQL_ROOT_PASSWORD" << EOF
+    ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+    ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+    FLUSH PRIVILEGES;
+EOF
+    log "MySQL/MariaDB secured."
+}
 
 # Function to create a new site
 create_site() {
@@ -175,7 +184,13 @@ wait_for_mariadb
 start_redis
 wait_for_redis
 log "MariaDB and Redis services started successfully."
-
+if [[ ! -f /var/.secure_installation_done ]]; then
+  run_secure_installation
+  touch /var/.secure_installation_done
+  log "Secure installation completed and marked as done."
+else
+  log "Secure installation already completed. Skipping..."
+fi
 
 log "MariaDB secure installation completed. Setting up Frappe components..."
 
@@ -210,18 +225,47 @@ if [[ -f /tmp/src/apps.json ]]; then
     log "Installing Frappe apps from apps.json..."
     jq -c '.[]' /tmp/src/apps.json | while read app; do
         app_name=$(echo $app | jq -r '.name')
-        app_url=$(echo $app | jq -r '.url')
-        app_branch=$(echo $app | jq -r '.branch')
-        if [[ -z "$app_name" || -z "$app_url" || -z "$app_branch" ]]; then
-            log "[ERROR] Missing app details in apps.json. Skipping..."
+        app_source=$(echo $app | jq -r '.source // empty')
+        app_url=$(echo $app | jq -r '.url // empty')
+        app_branch=$(echo $app | jq -r '.branch // empty')
+
+        if [[ -z "$app_name" ]]; then
+            log "[ERROR] Missing app name in apps.json entry. Skipping..."
             continue
         fi
-        log "Installing $app_name from $app_url ($app_branch)..."
-        if ! bench get-app "$app_name" "$app_url" --branch "$app_branch"; then
-            log "[ERROR] Failed to install $app_name from $app_url ($app_branch). Skipping..."
-            continue
+
+        if [[ -n "$app_source" ]]; then
+            # Local source mode: copy from /tmp/src/<source> into apps/<name>
+            local_path="/tmp/src/${app_source}"
+            if [[ ! -d "$local_path" ]]; then
+                log "[ERROR] Local source directory '$local_path' not found. Skipping $app_name..."
+                continue
+            fi
+            log "Installing $app_name from local source ($app_source)..."
+            mkdir -p "$bench_dir/apps/$app_name"
+            cp -Rf "$local_path/"* "$bench_dir/apps/$app_name/"
+            find "$bench_dir/apps/$app_name" -name .git -type d -exec rm -rf {} + 2>/dev/null || true
+            cd "$bench_dir"
+            env/bin/python3 -m pip install -e "./apps/$app_name"
+        else
+            # Git mode: fetch from URL
+            if [[ -z "$app_url" || -z "$app_branch" ]]; then
+                log "[ERROR] Missing url/branch for $app_name in apps.json. Skipping..."
+                continue
+            fi
+            log "Installing $app_name from $app_url ($app_branch)..."
+            if ! bench get-app "$app_name" "$app_url" --branch "$app_branch"; then
+                log "[ERROR] Failed to install $app_name from $app_url ($app_branch). Skipping..."
+                continue
+            fi
         fi
     done
+
+    # Rebuild apps.txt and assets after processing all apps
+    cd "$bench_dir"
+    ls -1 "$bench_dir/apps" > "$bench_dir/sites/apps.txt"
+    log "Updated apps.txt: $(cat $bench_dir/sites/apps.txt)"
+    bench build --production
 fi
 
 # Handle custom app if detected
@@ -256,14 +300,13 @@ else
     cd "$bench_dir"
     env/bin/python3 -m pip install -e "./apps/${CUSTOM_APP_NAME}"
     
+    log "Building assets for custom app $app_name..."
+    bench build --production
+    
     # Remove git directories to reduce size
     find "$bench_dir/apps/${CUSTOM_APP_NAME}" -name .git -type d -exec rm -rf {} + 2>/dev/null || true
     log "Custom app $app_name setup completed."
 fi
-
-log "Building assets for bench..."
-cd "$bench_dir"
-bench build --production
 
 # Site creation
 cd "$bench_dir"
@@ -278,13 +321,15 @@ else
         create_site "$site_name" "admin"
     else
         log "Default site $site_name already exists. Skipping creation..."
+        log "Installing any new apps on existing site $site_name..."
+        apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+        for app in "${apps_list[@]}"; do
+            app_name=$(basename "$app")
+            log "Installing $app_name on $site_name..."
+            bench --site "$site_name" install-app "$app_name" || log "App $app_name may already be installed, continuing..."
+        done
     fi
 fi
-
-log "Clearing Frappe cache..."
-bench --site "$site_name" clear-cache || true
-log "Flushing Redis cache and queue..."
-redis-cli flushall || true
 
 log "Fixing permissions..."
 
@@ -303,7 +348,6 @@ if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
         log "Warning: No assets found to cache."
     fi
 fi
-
 
 # Return to initial directory
 cd "$WORKDIR"
