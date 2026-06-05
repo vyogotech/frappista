@@ -57,7 +57,11 @@ jobs:
             VERSION="${{ github.base_ref }}"
             IMAGE_TAG="$REF_NAME"
           else
-            VERSION="$REF_NAME"
+            if [[ "$REF_NAME" =~ ^(version-14|version-15|version-16|develop)$ ]]; then
+              VERSION="$REF_NAME"
+            else
+              VERSION="develop"
+            fi
             IMAGE_TAG="$REF_NAME"
           fi
           IMAGE_TAG="${IMAGE_TAG//\//-}"
