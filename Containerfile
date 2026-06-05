@@ -1,12 +1,13 @@
 # syntax=docker/dockerfile:1
 # check=skip=InvalidBaseImagePlatform
 # Stage 1: Base image with tools and dependencies
-# quay.io/sclorg/mariadb-1011-c9s is amd64-only; arm64 builds use QEMU during RUN
-# steps and native aarch64 binaries (e.g. esbuild) are installed explicitly below.
-FROM quay.io/sclorg/mariadb-1011-c9s AS builder
+# Using almalinux:9 as base for true multi-arch support (amd64 and arm64) without UBI subscription limits
+FROM almalinux:9 AS builder
 USER root
 
-ENV APP_ROOT=/opt/app-root
+ENV APP_ROOT=/opt/app-root \
+    MYSQL_UID=27 \
+    FRAPPE_UID=1001
 
 # Set labels
 LABEL maintainer="Dev <dev@vyogolabs.tech>"
@@ -18,7 +19,16 @@ LABEL io.k8s.description="Single Node Environment for ERPNext" \
      maintainer="vyogolabs.tech <dev@vyogolabs.tech>"
 
 # Install base dependencies
-RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+RUN dnf -y module enable mariadb:10.11 && \
+    dnf install -y mariadb mariadb-server mariadb-server-utils mariadb-devel && \
+    mkdir -p /var/lib/mysql && \
+    mkdir -p /var/run/mariadb && \
+    chown -R ${MYSQL_UID}:${MYSQL_UID} /var/lib/mysql /var/run/mariadb && \
+    chmod 755 /var/lib/mysql /var/run/mariadb && \
+    useradd -u ${FRAPPE_UID} -r -g 0 -d /home/frappe -s /sbin/nologin -c "Default Application User" default && \
+    mkdir -p /home/frappe && \
+    chown ${FRAPPE_UID}:0 /home/frappe && \
+    dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     wget \
     vim \
     git \
@@ -78,8 +88,8 @@ ENV PYTHON_VERSION=3.14 \
     PATH=$HOME/.local/bin/:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
-    LC_ALL=en_US.UTF-8 \
-    LANG=en_US.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
     CNB_STACK_ID=com.redhat.stacks.ubi9-python-311 \
     CNB_USER_ID=1001 \
     CNB_GROUP_ID=0 \
@@ -152,7 +162,6 @@ RUN dnf -y module enable nginx:$NGINX_VERSION && \
     chmod -R ug+rwX ${NGINX_APP_ROOT}/src/nginx-start/ && \
     chmod -R ug+rwX ${NGINX_CONTAINER_SCRIPTS_PATH}/nginx-start && \
     chmod -R ug+rwX /var/lib/nginx /var/log/nginx /run && \
-    rpm-file-permissions && \
     chown -R 1001:0 /var && \
     chmod -R ug+rwX /var && touch /help.1
 
@@ -193,7 +202,6 @@ RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
   --frappe-path=${FRAPPE_PATH} \
   --no-backups \
   --skip-redis-config-generation \
-  --verbose \
   /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
@@ -201,25 +209,6 @@ RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
   bench set-config --global redis_cache "redis://localhost:6379" && \
   bench set-config --global redis_queue "redis://localhost:6379" && \
   bench set-config --global redis_socketio "redis://localhost:6379"
-
-# The base image is linux/amd64-only, so every RUN step executes as amd64
-# even when building with --platform linux/arm64. bench init therefore only
-# installs @esbuild/linux-x64. Download and unpack the arm64 binary package
-# directly (bypassing yarn/npm arch checks) so bench build works on native
-# aarch64 hosts (Apple Silicon, ARM servers) at runtime.
-RUN ESBUILD_ARM64_PKG="@esbuild/linux-arm64" && \
-    ESBUILD_TGZ="esbuild-linux-arm64-${ESBUILD_VERSION}.tgz" && \
-    NPM_REGISTRY="https://registry.npmjs.org" && \
-    PKG_URL="${NPM_REGISTRY}/@esbuild/linux-arm64/-/linux-arm64-${ESBUILD_VERSION}.tgz" && \
-    DEST="/home/frappe/frappe-bench/apps/frappe/node_modules/@esbuild/linux-arm64" && \
-    mkdir -p /tmp/esbuild-arm64 && \
-    curl -fsSL "$PKG_URL" -o /tmp/esbuild-arm64/pkg.tgz && \
-    tar -xzf /tmp/esbuild-arm64/pkg.tgz -C /tmp/esbuild-arm64 && \
-    mkdir -p "$DEST" && \
-    cp -r /tmp/esbuild-arm64/package/. "$DEST/" && \
-    chmod +x "$DEST/bin/esbuild" 2>/dev/null || true && \
-    rm -rf /tmp/esbuild-arm64 && \
-    chown -R 1001:0 "$DEST" && chmod -R ug+rwX "$DEST"
 
 # Expose ports
 EXPOSE 8000
