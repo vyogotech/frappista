@@ -284,7 +284,7 @@ fi
 log "Clearing Frappe cache..."
 bench --site "$site_name" clear-cache || true
 log "Flushing Redis cache and queue..."
-redis-cli flushall || true
+
 
 log "Fixing permissions..."
 
@@ -304,7 +304,8 @@ if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
     fi
 fi
 
-
+#important to cleanup the redis entries to avoid assets serving
+redis-cli flushall 
 # Return to initial directory
 cd "$WORKDIR"
 log "Assemble completed successfully."
