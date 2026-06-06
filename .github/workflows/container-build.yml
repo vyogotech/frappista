@@ -285,19 +285,25 @@ jobs:
         if: contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make push-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+          IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:s2i-${{ needs.setup.outputs.image_tag }}"
+          podman manifest create $IMAGE docker://$IMAGE-amd64 docker://$IMAGE-arm64
+          podman manifest push --all $IMAGE docker://$IMAGE
 
       - name: Create Frappe App Multi-arch Manifest
         if: contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make frappe-app-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+          IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}"
+          podman manifest create $IMAGE docker://$IMAGE-amd64 docker://$IMAGE-arm64
+          podman manifest push --all $IMAGE docker://$IMAGE
 
       - name: Create ERPNext Multi-arch Manifest
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+          IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}"
+          podman manifest create $IMAGE docker://$IMAGE-amd64 docker://$IMAGE-arm64
+          podman manifest push --all $IMAGE docker://$IMAGE
 
   smoke-test:
     needs: [setup, create-manifests]
