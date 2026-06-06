@@ -6,6 +6,7 @@ ARG TARGETARCH=amd64
 # Using almalinux:9 as base for true multi-arch support (amd64 and arm64) without UBI subscription limits
 FROM almalinux:9 AS builder
 USER root
+ARG TARGETARCH
 
 ENV APP_ROOT=/opt/app-root \
     MYSQL_UID=27 \
@@ -171,6 +172,7 @@ RUN dnf -y module enable nginx:$NGINX_VERSION && \
 # Stage 2: S2I scripts and Frappe setup
 FROM builder AS final
 USER root
+ARG TARGETARCH
 
 # Set the environment variable for MySQL
 ENV MYSQL_ROOT_PASSWORD=ChangeMe
