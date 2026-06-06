@@ -149,6 +149,23 @@ jobs:
           sudo mv s2i-temp/s2i /usr/local/bin/
           rm -rf s2i-temp source-to-image-*.tar.gz
 
+      - name: Cache Podman Build Cache
+        uses: actions/cache@v4
+        with:
+          # Podman --mount=type=cache writes to the build cache storage, NOT volumes/.
+          # Both root (sudo podman) and rootless paths are included.
+          path: |
+            /root/.local/share/containers/storage/cache
+            /root/.local/share/containers/storage/overlay
+            /home/runner/.local/share/containers/storage/cache
+            /home/runner/.local/share/containers/storage/overlay
+          # Key excludes sha so the same branch always restores its last warm cache.
+          key: podman-build-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            podman-build-${{ runner.os }}-${{ github.ref_name }}-
+            podman-build-${{ runner.os }}-
+
+
       # Build and Push Frappe - AMD64
       - name: Build and Push Frappe - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')

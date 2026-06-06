@@ -48,18 +48,18 @@ help:
 # Build for current architecture
 .PHONY: build
 build:
-	$(CONTAINER) build -f $(CONTAINERFILE) -t $(LOCAL_IMAGE_NAME) . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH)
+	$(CONTAINER) build -f $(CONTAINERFILE) -t $(LOCAL_IMAGE_NAME) . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH) --build-arg TARGETARCH=$(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
 # Build for AMD64
 .PHONY: build-amd64
 build-amd64:
-	$(CONTAINER) build -f $(CONTAINERFILE) --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH)
+	$(CONTAINER) build -f $(CONTAINERFILE) --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH) --build-arg TARGETARCH=amd64
 
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
 	@echo "Building $(LOCAL_IMAGE_NAME)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION)"
-	$(CONTAINER) build -f $(CONTAINERFILE) --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH)
+	$(CONTAINER) build -f $(CONTAINERFILE) --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH) --build-arg TARGETARCH=arm64
 	@echo "Build completed. Verifying image was created:"
 	$(CONTAINER) images $(LOCAL_IMAGE_NAME)-arm64
 

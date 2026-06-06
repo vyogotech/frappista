@@ -1,0 +1,21 @@
+# Credentials & local secrets
+.secrets
+
+# Local act config (developer-specific, not shared)
+# Remove this line if you want to share the .actrc with the team
+# .actrc
+
+# macOS system files
+.DS_Store
+**/.DS_Store
+
+# Scratch/fix scripts generated during development
+fix_*.py
+*.txt
+
+# Temporary upload dir created by s2i-podman.sh
+upload/
+
+# Containerfile drafts/copies
+Containerfile\ copy
+Containerfile copy
