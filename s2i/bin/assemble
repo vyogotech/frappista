@@ -160,9 +160,13 @@ WORKDIR=$(pwd)
 log "Starting assemble script in directory: $WORKDIR"
 
 # Restore artifacts from the previous build
-if [ "$(ls /tmp/artifacts/ 2>/dev/null)" ]; then
+if [ "$(ls -A /tmp/artifacts/ 2>/dev/null)" ]; then
     log "Restoring build artifacts..."
-    mv /tmp/artifacts/. ./
+    if [ -d "/tmp/artifacts/home" ]; then
+        cp -Rf /tmp/artifacts/home/* /home/
+        rm -rf /tmp/artifacts/home
+    fi
+    mv /tmp/artifacts/* ./ 2>/dev/null || true
 fi
 
 log "Installing application source..."

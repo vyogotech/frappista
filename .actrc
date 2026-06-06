@@ -1,0 +1,10 @@
+# act configuration for frappista
+# Use the full Ubuntu 22.04 act image — has sudo, apt-get, systemd, fuse, and podman support
+-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-22.04
+
+# Run containers in privileged mode so podman-in-docker can use overlay storage
+# Note: --device=/dev/fuse is Linux-only; on macOS Docker Desktop, privileged is sufficient
+--container-options=--privileged
+
+# Load secrets from .secrets file
+--secret-file .secrets
