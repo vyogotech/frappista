@@ -123,7 +123,7 @@ jobs:
           echo "Available disk space before builds:"
           df -h
 
-  build-and-test:
+  build-amd64:
     needs: setup
     if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref
     runs-on: ubuntu-latest
@@ -152,21 +152,16 @@ jobs:
       - name: Cache Podman Build Cache
         uses: actions/cache@v4
         with:
-          # Podman --mount=type=cache writes to the build cache storage, NOT volumes/.
-          # Both root (sudo podman) and rootless paths are included.
           path: |
             /root/.local/share/containers/storage/cache
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
-          # Key excludes sha so the same branch always restores its last warm cache.
-          key: podman-build-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          key: podman-build-amd64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            podman-build-${{ runner.os }}-${{ github.ref_name }}-
-            podman-build-${{ runner.os }}-
+            podman-build-amd64-${{ runner.os }}-${{ github.ref_name }}-
+            podman-build-amd64-${{ runner.os }}-
 
-
-      # Build and Push Frappe - AMD64
       - name: Build and Push Frappe - AMD64
         if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
         run: |
@@ -176,24 +171,6 @@ jobs:
             make push-only-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           fi
 
-      # Build and Push Frappe - ARM64
-      - name: Build and Push Frappe - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
-        run: |
-          make build-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            make push-only-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-          fi
-
-      - name: Create Frappe Multi-arch Manifest
-        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
-        run: |
-          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make remove-manifests FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-          make push-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-
-      # Build and Push Frappe App - AMD64
       - name: Build and Push Frappe App - AMD64
         if: contains(needs.setup.outputs.components, 'frappe')
         run: |
@@ -204,25 +181,6 @@ jobs:
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-amd64
           fi
 
-      # Build and Push Frappe App - ARM64
-      - name: Build and Push Frappe App - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe')
-        run: |
-          make frappe-app-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-            podman tag localhost/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
-            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
-          fi
-
-      - name: Create Frappe App Multi-arch Manifest
-        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
-        run: |
-          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make remove-frappe-app-manifests FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-          make frappe-app-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-
-      # Build and Push ERPNext - AMD64
       - name: Build and Push ERPNext - AMD64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
@@ -233,7 +191,68 @@ jobs:
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-amd64
           fi
 
-      # Build and Push ERPNext - ARM64
+      - name: Check disk space after
+        run: |
+          df -h
+
+  build-arm64:
+    needs: setup
+    if: needs.setup.outputs.should_build == 'true' && !github.event.inputs.image_ref
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman qemu-user-static
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+          wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
+          mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
+          sudo mv s2i-temp/s2i /usr/local/bin/
+          rm -rf s2i-temp source-to-image-*.tar.gz
+
+      - name: Cache Podman Build Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /root/.local/share/containers/storage/cache
+            /root/.local/share/containers/storage/overlay
+            /home/runner/.local/share/containers/storage/cache
+            /home/runner/.local/share/containers/storage/overlay
+          key: podman-build-arm64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            podman-build-arm64-${{ runner.os }}-${{ github.ref_name }}-
+            podman-build-arm64-${{ runner.os }}-
+
+      - name: Build and Push Frappe - ARM64
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make build-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+          fi
+
+      - name: Build and Push Frappe App - ARM64
+        if: contains(needs.setup.outputs.components, 'frappe')
+        run: |
+          make frappe-app-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag localhost/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}-arm64
+          fi
+
       - name: Build and Push ERPNext - ARM64
         if: contains(needs.setup.outputs.components, 'erpnext')
         run: |
@@ -244,19 +263,44 @@ jobs:
             podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}-arm64
           fi
 
-      - name: Create ERPNext Multi-arch Manifest
-        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'erpnext')
-        run: |
-          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
-          make remove-erpnext-manifests FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-          make erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
-
       - name: Check disk space after
         run: |
           df -h
 
+  create-manifests:
+    needs: [setup, build-amd64, build-arm64]
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman qemu-user-static
+          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          sudo systemctl restart podman || true
+
+      - name: Create Frappe Multi-arch Manifest
+        if: contains(needs.setup.outputs.components, 'frappe')
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make push-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+
+      - name: Create Frappe App Multi-arch Manifest
+        if: contains(needs.setup.outputs.components, 'frappe')
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make frappe-app-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+
+      - name: Create ERPNext Multi-arch Manifest
+        if: contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make erpnext-manifest FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
+
   smoke-test:
-    needs: [setup, build-and-test]
+    needs: [setup, create-manifests]
     if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
     runs-on: ubuntu-latest
     timeout-minutes: 15
