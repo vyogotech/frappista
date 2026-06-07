@@ -1,176 +1,91 @@
-# Creating a Basic S2I Builder Image  
+# Single Node Frappista
 
-## Introduction  
+![Startup Log](startup.png)
 
-### Why Frappe Framework?  
-Frappe Framework is a full-stack web application framework built on Python and JavaScript. It provides a robust foundation for building modern web applications with features like a database abstraction layer, REST API, and a modular architecture. Frappe is widely used for developing ERPNext, a popular open-source ERP solution.  
+## What is Single Node Frappista?
 
-### Why Use S2I for Development?  
-Source-to-Image (S2I) is a powerful tool for building reproducible container images directly from source code. Unlike pre-baked images, S2I allows developers to dynamically inject application source code into a base image, reducing the need for frequent image rebuilds. This approach is particularly beneficial for development workflows, as it accelerates iteration cycles and ensures consistency across environments.  
+**Single Node Frappista** provides pre-packaged, zero-configuration Docker images for the [Frappe Framework](https://frappeframework.com/) and [ERPNext](https://erpnext.com/). 
 
-## Getting Started  
+Instead of spending hours setting up MariaDB, Redis, Node, Python, and the Frappe Bench locally, you can pull one of these images and have a fully running, single-node Frappe/ERPNext environment instantly. It comes pre-installed with a site named `dev.localhost`.
 
-This repo currently aims to build a single node images with all the dependencies for improving the development cycle, ci/cd or quick demos. These images comes with pre-installed site dev.localhost with frappe. So give it a go. 
+These images are perfect for:
+- Rapid local development
+- CI/CD pipelines
+- Quick product demonstrations
 
-This solution will help developers to build custom apps quite easily using apps.json or their source code directly. 
+---
 
-### Files and Directories  
-| File                   | Required? | Description                                                  |
-|------------------------|-----------|--------------------------------------------------------------|
-| Containerfile          | Yes       | Defines the base builder image                               |
-| s2i/bin/assemble       | Yes       | Script that builds the application                           |
-| s2i/bin/usage          | No        | Script that prints the usage of the builder                  |
-| s2i/bin/run            | Yes       | Script that runs the application                             |
-| s2i/bin/save-artifacts | No        | Script for incremental builds that saves the built artifacts |
-| s2i/bin/test           | No        | Script to run tests for the application                      |
-| test/run               | No        | Test script for the builder image                            |
-| test/test-app          | Yes       | Test application source code                                 |
-| Makefile               | No        | Automates build and test commands                            |
+## 📦 Image Coordinates
 
-#### Containerfile  
-Create a *Containerfile* that installs all of the necessary tools and libraries needed to build and run the application. This file will also handle copying the S2I scripts into the created image.  
+All images are actively published to Docker Hub and are natively built for both **AMD64** (Intel/AMD) and **ARM64** (Apple Silicon/M1/M2/M3/M4).
 
-#### S2I Scripts  
+| Application | Tag / Version | Image Name |
+|-------------|---------------|------------|
+| **Frappe** | `version-14` | `docker.io/vyogo/frappe:sne-version-14` |
+| **Frappe** | `version-15` | `docker.io/vyogo/frappe:sne-version-15` |
+| **Frappe** | `develop` | `docker.io/vyogo/frappe:sne-develop` |
+| **ERPNext** | `version-14` | `docker.io/vyogo/erpnext:sne-version-14` |
+| **ERPNext** | `version-15` | `docker.io/vyogo/erpnext:sne-version-15` |
+| **ERPNext** | `develop` | `docker.io/vyogo/erpnext:sne-develop` |
 
-##### assemble  
-Create an *assemble* script that will build the application, e.g.:  
-- Build Python modules  
-- Install Ruby gems  
-- Set up application-specific configuration  
+*(Note: The `s2i-*` tags are internal builder images. For running the application, always use the `sne-*` (Single Node Environment) tags listed above).*
 
-The script can also specify a way to restore any saved artifacts from the previous image.  
+---
 
-##### run  
-Create a *run* script that will start the application.  
+## 🚀 How to Run
 
-##### save-artifacts (optional)  
-Create a *save-artifacts* script which allows a new build to reuse content from a previous version of the application image.  
+Running your own Frappe/ERPNext environment is as simple as executing a single command. 
 
-##### usage (optional)  
-Create a *usage* script that will print out instructions on how to use the image.  
+Ensure you have [Docker](https://www.docker.com/) or [Podman](https://podman.io/) installed, then run:
 
-##### test (optional)  
-Create a *test* script to validate the application functionality after the image is built.  
-
-##### Make the Scripts Executable  
-Make sure that all of the scripts are executable by running:  
-```
-chmod +x s2i/bin/**
+```bash
+docker run -d \
+  --name my-frappe-instance \
+  -p 8080:8000 \
+  docker.io/vyogo/erpnext:sne-version-15 \
+  /usr/libexec/s2i/run
 ```
 
-#### Create the Builder Image  
-The following command will create a builder image named `vyogotech/frappe:s2i-base` based on the Containerfile created previously:  
+**Accessing the application:**
+1. Wait a moment for the internal services (MariaDB, Redis, etc.) to start.
+2. Open your browser and navigate to: `http://localhost:8080`
+3. Login using the default credentials:
+   - **Username:** `Administrator`
+   - **Password:** `admin` (or `ChangeMe` depending on the build configuration)
+
+---
+
+## 🛠 Mounting Custom Apps (Development)
+
+If you are developing a custom Frappe app, you don't need to rebuild the entire image every time you make a change. You can mount your local app directory directly into the container!
+
+Assuming your custom app is located at `./my_custom_app`:
+
+```bash
+docker run -d \
+  --name my-dev-bench \
+  -p 8080:8000 \
+  -v $(pwd)/my_custom_app:/home/frappe/frappe-bench/apps/my_custom_app \
+  docker.io/vyogo/frappe:sne-version-15 \
+  /usr/libexec/s2i/run
 ```
-make build
-```  
-The builder image can also be created using the *make* command if a *Makefile* is included.  
 
-Once the image has finished building, the command `s2i usage vyogotech/frappe:s2i-base` will print out the help info defined in the *usage* script.  
+Once the container is running, you can install your app into the site:
 
+```bash
+# Exec into the container
+docker exec -it my-dev-bench /bin/bash
 
-#### Testing the Builder Image  
-The builder image can be tested using the following commands:  
+# Install the app onto the default site
+bench --site dev.localhost install-app my_custom_app
 ```
-make test
-```  
-The builder image can also be tested using the *make test* command if a *Makefile* is included.  
 
-#### Creating the Application Image  
-The application image combines the builder image with your application's source code, which is served using the application installed via the *Containerfile*, compiled using the *assemble* script, and run using the *run* script.  
-The following command will create the application image:  
-```
-s2i build test/test-app vyogotech/frappe:s2i-base vyogotech/frappe:s2i-base-app
----> Building and installing application from source...
-```  
-Using the logic defined in the *assemble* script, S2I will now create an application image using the builder image as a base and including the source code from the `test/test
-Using the logic defined in the *assemble* script, S2I will now create an application image using the builder image as a base and including the source code from the `test/test-app` directory.  
+Now, any changes you make in your local `./my_custom_app` folder will immediately reflect in the running container!
 
-#### Running the Application Image  
-Running the application image is as simple as invoking the `docker run` command:  
-```
-docker run -d -p 8080:8080 vyogotech/frappe:s2i-base-app
-```  
-The application, which consists of a simple static web page, should now be accessible at [http://localhost:8080](http://localhost:8080).  
+---
 
-#### Using the Saved Artifacts Script  
-Rebuilding the application using the saved artifacts can be accomplished using the following command:  
-```
-s2i build --incremental=true test/test-app vyogotech/frappe:s2i-base vyogotech/frappe:s2i-base-app
----> Restoring build artifacts...
----> Building and installing application from source...
-```  
-This will run the *save-artifacts* script, which includes the custom code to back up the currently running application source, rebuild the application image, and then redeploy the previously saved source using the *assemble* script.  
+## 📖 Advanced: Technical Documentation & S2I Building
 
+Are you looking to use Frappista as a base image to package your own apps for production, or want to understand how the Source-to-Image (S2I) build process works under the hood?
 
-### Advanced Build Options  
-
-In addition to the basic S2I workflow, you can customize the build process using configuration files like `apps.json` and `bench-config.json`. These files allow you to define specific parameters for your Frappe application setup.
-
-#### apps.json  
-The `apps.json` file is used to specify the Frappe apps to be installed during the build process. Each app entry should include the app name, repository URL, and branch. For example:  
-```json
-[
-    {
-        "name": "erpnext",
-        "url": "https://github.com/frappe/erpnext.git",
-        "branch": "version-14"
-    },
-    {
-        "name": "custom_app",
-        "url": "https://github.com/your-org/custom_app.git",
-        "branch": "main"
-    }
-]
-```
-During the build, the `assemble` script will read this file and install the specified apps using the `bench get-app` command.
-
-#### bench-config.json  
-The `bench-config.json` file defines the configuration for initializing the Frappe bench. It includes details like the branch of the Frappe framework to use and the name of the bench directory. For example:  
-```json
-{
-    "branch": "version-14",
-    "bench_name": "frappe-bench"
-}
-```
-The `assemble` script uses this file to initialize the bench with the specified configuration.
-
-#### site-config.json  
-The `site-config.json` file is used to define the default site configuration, including the site name and admin password. For example:  
-```json
-{
-    "site_name": "dev.localhost",
-    "admin_password": "admin"
-}
-```
-If this file is present, the `assemble` script will create the specified site and configure it with the provided credentials.
-
-#### Example Workflow  
-1. Place the `apps.json`, `bench-config.json`, and `site-config.json` files in the appropriate directory.
-2. Run the S2I build command:  
-   ```
-   s2i build test/test-app vyogotech/frappe:s2i-base vyogotech/frappe:s2i-base-app
-   ```
-3. The `assemble` script will:
-   - Initialize the bench using `bench-config.json`.
-   - Install the apps listed in `apps.json`.
-   - Create the site specified in `site-config.json`.
-
-By using these configuration files, you can automate and customize the build process to suit your specific requirements.
-
-## Developer Samples
-
-For practical examples and a quick-start guide on how to package your own apps using Frappista S2I images, check out the **[samples/](./samples/)** directory.
-
-Included samples:
-- **[apps.json](./samples/custom-app/apps.json)**: Multi-app configuration.
-- **[Containerfile](./samples/custom-app/Containerfile)**: Using Frappista as a base image.
-- **[site-config.json](./samples/custom-app/site-config.json)**: Site-level configuration.
-
-## Startup log
-### Example Startup Log  
-
-Below is an example of the startup log when running the application image:  
-
-![Startup Log](./startup.png)  
-
-This log provides insights into the initialization process, including database setup, server startup, and any warnings or errors encountered.  
+Please refer to our **[S2I Builder Technical Documentation](docs/s2i-builder.md)**.

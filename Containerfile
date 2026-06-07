@@ -46,6 +46,7 @@ RUN dnf -y module enable mariadb:10.11 && \
     xz-devel \
     libuuid-devel \
     file \
+    procps-ng \
     mariadb-connector-c-devel && \
     rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/dnf.*
 
