@@ -8,6 +8,8 @@ log() {
 # Function to start MariaDB service
 start_mariadb() {
     log "Starting MariaDB service."
+    mkdir -p /var/run/mariadb /var/lib/mysql
+    chown -R 1001:0 /var/run/mariadb /var/lib/mysql || true
     
     if [ ! -d "/var/lib/mysql/mysql" ]; then
         log "Initializing MariaDB data directory..."
