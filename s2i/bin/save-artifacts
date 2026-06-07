@@ -8,3 +8,12 @@
 #	https://github.com/openshift/source-to-image/blob/master/docs/builder_image.md
 #
 # tar cf - <list of files and folders>
+
+PATHS_TO_CACHE=""
+[ -d /home/frappe/.cache/pip ] && PATHS_TO_CACHE="$PATHS_TO_CACHE /home/frappe/.cache/pip"
+[ -d /home/frappe/.npm ] && PATHS_TO_CACHE="$PATHS_TO_CACHE /home/frappe/.npm"
+[ -d /home/frappe/frappe-bench/apps/node_modules ] && PATHS_TO_CACHE="$PATHS_TO_CACHE /home/frappe/frappe-bench/apps/node_modules"
+
+if [ -n "$PATHS_TO_CACHE" ]; then
+    tar cf - $PATHS_TO_CACHE 2>/dev/null || true
+fi
