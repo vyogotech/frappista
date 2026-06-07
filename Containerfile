@@ -151,7 +151,6 @@ RUN dnf -y module enable nginx:$NGINX_VERSION && \
     chmod -R ug+rwX ${NGINX_APP_ROOT}/src/nginx-start/ && \
     chmod -R ug+rwX ${NGINX_CONTAINER_SCRIPTS_PATH}/nginx-start && \
     chmod -R ug+rwX /var/lib/nginx /var/log/nginx /run && \
-    rpm-file-permissions && \
     chown -R 1001:0 /var && \
     chmod -R ug+rwX /var && touch /help.1
 
