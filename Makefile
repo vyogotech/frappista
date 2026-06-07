@@ -1,7 +1,7 @@
 # Configuration
 REGISTRY=docker.io
 REPO=vyogo
-FRAPPE_VERSION?=version-16
+FRAPPE_VERSION?=develop
 FRAPPE_BRANCH?=$(FRAPPE_VERSION)
 IMAGE_TAG?=$(FRAPPE_VERSION)
 CONTAINER ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
