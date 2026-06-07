@@ -1,6 +1,11 @@
 # Stage 1: Base image with tools and dependencies
-FROM quay.io/sclorg/mariadb-1011-c9s AS builder
+FROM almalinux:9 AS builder
 USER root
+ARG TARGETARCH
+
+ENV APP_ROOT=/opt/app-root \
+    MYSQL_UID=27 \
+    FRAPPE_UID=1001
 
 # Set labels
 LABEL maintainer="Dev <dev@vyogolabs.tech>"
@@ -12,7 +17,16 @@ LABEL io.k8s.description="Single Node Environment for ERPNext" \
      maintainer="vyogolabs.tech <dev@vyogolabs.tech>"
 
 # Install base dependencies
-RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+RUN dnf -y module enable mariadb:10.11 && \
+    dnf install -y mariadb mariadb-server mariadb-server-utils mariadb-devel && \
+    mkdir -p /var/lib/mysql && \
+    mkdir -p /var/run/mariadb && \
+    chown -R ${MYSQL_UID}:${MYSQL_UID} /var/lib/mysql /var/run/mariadb && \
+    chmod 755 /var/lib/mysql /var/run/mariadb && \
+    useradd -u ${FRAPPE_UID} -r -g 0 -d /home/frappe -s /sbin/nologin -c "Default Application User" default && \
+    mkdir -p /home/frappe && \
+    chown ${FRAPPE_UID}:0 /home/frappe && \
+    dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     wget \
     vim \
     git \
@@ -27,23 +41,14 @@ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.n
     xz-devel \
     libuuid-devel \
     file \
+    procps-ng \
     mariadb-connector-c-devel && \
     rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/dnf.*
 
-# Install wkhtmltopdf based on architecture
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        #install jq for x86_64
-        dnf -y install jq && \
-        dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/x86_64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
-        dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.x86_64.rpm; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        dnf -y install jq.aarch64 && \
-        dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/aarch64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
-        dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.aarch64.rpm; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi && \
+# Install wkhtmltopdf
+RUN dnf -y install jq && \
+    dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/$(uname -m)/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
+    dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.$(uname -m).rpm && \
     dnf clean all
 
 # Setup Redis — compile from source with MALLOC=libc to avoid jemalloc segfaults
@@ -54,16 +59,17 @@ ENV REDIS_VERSION=7 \
 RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     usermod -l redis -aG redis -c 'Redis Server' default &> /dev/null && \
     dnf -y install policycoreutils make gcc && \
-    cd /tmp && \
-    curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" \
-      -o redis.tar.gz && \
-    tar xzf redis.tar.gz && \
-    cd "redis-${REDIS_SOURCE_VERSION}" && \
-    make MALLOC=libc CFLAGS="-fno-lto" -j1 && \
-    make install PREFIX=/usr && \
-    cd / && rm -rf /tmp/redis* && \
-    dnf -y clean all --enablerepo='*' && \
-    redis-server --version | grep -qe "^Redis server v=$REDIS_VERSION\." && echo "Found VERSION $REDIS_VERSION" && \
+    dnf -y clean all --enablerepo='*'
+
+RUN --mount=type=cache,id=redis-${REDIS_SOURCE_VERSION}-${TARGETARCH},target=/tmp/redis-build \
+    cd /tmp/redis-build && \
+    if [ ! -f Makefile ]; then \
+        curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" | tar xzf - --strip-components=1; \
+    fi && \
+    make MALLOC=libc CFLAGS="-fno-lto" -j$(nproc) && \
+    make install PREFIX=/usr
+
+RUN redis-server --version | grep -qe "^Redis server v=$REDIS_VERSION\." && echo "Found VERSION $REDIS_VERSION" && \
     mkdir -p /var/lib/redis/data && chown -R redis.0 /var/lib/redis && \
     [[ "$(id redis)" == "uid=1001(redis)"* ]] && usermod -l frappe -u 1001 -d /home/frappe -m -c "Frappe Bench" redis
 
@@ -72,8 +78,8 @@ ENV PYTHON_VERSION=3.14 \
     PATH=$HOME/.local/bin/:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
-    LC_ALL=en_US.UTF-8 \
-    LANG=en_US.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
     CNB_STACK_ID=com.redhat.stacks.ubi9-python-311 \
     CNB_USER_ID=1001 \
     CNB_GROUP_ID=0 \
@@ -169,7 +175,10 @@ RUN chmod +x /usr/libexec/s2i/* && \
 USER frappe
 
 # Install Frappe bench and dependencies
-RUN pip install frappe-bench \
+# frappe-bench >= 5.22 hard-codes `uv venv` during `bench init`.
+# Pin to the last pre-uv bench series so the image follows the standard
+# Python virtualenv flow instead of requiring an emulation-sensitive Rust binary.
+RUN pip install "click<8.2" "frappe-bench==5.21.5" \
     && pip install redis \
     && pip install mysql-connector-python
 
@@ -178,7 +187,9 @@ WORKDIR /home/frappe
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
-RUN echo "using version ${FRAPPE_BRANCH}" && bench init \
+RUN --mount=type=cache,id=pip-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/pip,uid=1001,gid=0 \
+  --mount=type=cache,id=npm-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.npm,uid=1001,gid=0 \
+  echo "using version ${FRAPPE_BRANCH}" && bench init \
   --frappe-branch=${FRAPPE_BRANCH} \
   --frappe-path=${FRAPPE_PATH} \
   --no-backups \
