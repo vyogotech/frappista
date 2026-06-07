@@ -32,6 +32,8 @@ command -v bench >/dev/null 2>&1 || error "bench is not installed. Please instal
 
 # Start MariaDB with proper daemonization
 log "Starting MariaDB..."
+mkdir -p /var/run/mariadb /var/lib/mysql
+chown -R 1001:0 /var/run/mariadb /var/lib/mysql || true
 if mysqld --datadir=/var/lib/mysql --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
   sleep 2
   if kill -0 $(cat /tmp/pids/mysqld.pid 2>/dev/null) 2>/dev/null; then
