@@ -44,7 +44,7 @@ if mysqld --datadir=/var/lib/mysql --pid-file=/tmp/pids/mysqld.pid &> /var/log/m
       error "MariaDB process started but died immediately. Check /var/log/mysqld.log for details."
     fi
     sleep 1
-    ((RETRY_COUNT++))
+    RETRY_COUNT=$((RETRY_COUNT + 1))
   done
 
   if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
@@ -71,7 +71,7 @@ if redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pid
       error "Redis process started but died immediately. Check /var/log/redis.log for details."
     fi
     sleep 1
-    ((RETRY_COUNT++))
+    RETRY_COUNT=$((RETRY_COUNT + 1))
   done
 
   if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
