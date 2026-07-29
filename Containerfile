@@ -17,7 +17,8 @@ LABEL io.k8s.description="Single Node Environment for ERPNext" \
      maintainer="vyogolabs.tech <dev@vyogolabs.tech>"
 
 # Install base dependencies
-RUN dnf -y module enable mariadb:10.11 && \
+RUN --mount=type=cache,id=dnf-${TARGETARCH},target=/var/cache/dnf,uid=0,gid=0 \
+    dnf -y module enable mariadb:10.11 && \
     dnf install -y mariadb mariadb-server mariadb-server-utils mariadb-devel && \
     mkdir -p /var/lib/mysql && \
     mkdir -p /var/run/mariadb && \
@@ -46,7 +47,8 @@ RUN dnf -y module enable mariadb:10.11 && \
     rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/dnf.*
 
 # Install wkhtmltopdf
-RUN dnf -y install jq && \
+RUN --mount=type=cache,id=dnf-${TARGETARCH},target=/var/cache/dnf,uid=0,gid=0 \
+    dnf -y install jq && \
     dnf -y install xorg-x11-fonts-75dpi && \
     dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.$(uname -m).rpm && \
     dnf clean all
@@ -56,7 +58,8 @@ RUN dnf -y install jq && \
 ENV REDIS_VERSION=7 \
     REDIS_SOURCE_VERSION=7.2.7 \
     HOME=/var/lib/redis
-RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
+RUN --mount=type=cache,id=dnf-${TARGETARCH},target=/var/cache/dnf,uid=0,gid=0 \
+    getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     usermod -l redis -aG redis -c 'Redis Server' default &> /dev/null && \
     dnf -y install policycoreutils make gcc && \
     dnf -y clean all --enablerepo='*'
@@ -85,7 +88,8 @@ ENV PYTHON_VERSION=3.14 \
     CNB_GROUP_ID=0 \
     PIP_NO_CACHE_DIR=off
 
-RUN INSTALL_PKGS="python3.14 python3.14-devel python3.14-pip" && \
+RUN --mount=type=cache,id=dnf-${TARGETARCH},target=/var/cache/dnf,uid=0,gid=0 \
+    INSTALL_PKGS="python3.14 python3.14-devel python3.14-pip" && \
     dnf -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
     alternatives --install /usr/bin/python python /usr/bin/python3.14 1 && \
@@ -104,7 +108,8 @@ ENV NPM_RUN=start \
     NPM_CONFIG_PREFIX=$HOME/.npm-global \
     PATH=$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH
 
-RUN INSTALL_PKGS="nodejs nodejs-nodemon nodejs-full-i18n npm findutils tar which" && \
+RUN --mount=type=cache,id=dnf-${TARGETARCH},target=/var/cache/dnf,uid=0,gid=0 \
+    INSTALL_PKGS="nodejs nodejs-nodemon nodejs-full-i18n npm findutils tar which" && \
     dnf -y module disable nodejs && \
     dnf -y module enable nodejs:$NODEJS_VERSION && \
     dnf -y --nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
@@ -126,7 +131,8 @@ ENV NAME=nginx \
     NGINX_LOG_PATH=/var/log/nginx \
     NGINX_PERL_MODULE_PATH=${APP_ROOT}/etc/perl
 
-RUN dnf -y module enable nginx:$NGINX_VERSION && \
+RUN --mount=type=cache,id=dnf-${TARGETARCH},target=/var/cache/dnf,uid=0,gid=0 \
+    dnf -y module enable nginx:$NGINX_VERSION && \
     INSTALL_PKGS="nginx" && \
     dnf install -y --setopt=tsflags=nodocs $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
