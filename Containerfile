@@ -47,7 +47,7 @@ RUN dnf -y module enable mariadb:10.11 && \
 
 # Install wkhtmltopdf
 RUN dnf -y install jq && \
-    dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/$(uname -m)/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
+    dnf -y install xorg-x11-fonts-75dpi && \
     dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.$(uname -m).rpm && \
     dnf clean all
 
