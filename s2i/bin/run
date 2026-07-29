@@ -123,7 +123,7 @@ for app in "${apps_list[@]}"; do
     log "App $app_name already registered."
   fi
 done
-ls -1 apps/ > sites/apps.txt
+(echo "frappe"; ls -1 apps/ | grep -v "^frappe$") > sites/apps.txt
 log "All apps registered."
 
 # Restore pre-built assets from image cache (populated during S2I assemble).
