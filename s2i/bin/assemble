@@ -254,7 +254,7 @@ if [[ -f /tmp/src/apps.json ]]; then
 
     # Rebuild apps.txt and assets after processing all apps
     cd "$bench_dir"
-    ls -1 "$bench_dir/apps" > "$bench_dir/sites/apps.txt"
+    (echo "frappe"; ls -1 "$bench_dir/apps" | grep -v "^frappe$") > "$bench_dir/sites/apps.txt"
     log "Updated apps.txt: $(cat $bench_dir/sites/apps.txt)"
 fi
 
@@ -282,7 +282,7 @@ else
     
     log "Updating apps.txt..."
     cd "$bench_dir"
-    ls -1 "$bench_dir/apps" > "$bench_dir/sites/apps.txt"
+    (echo "frappe"; ls -1 "$bench_dir/apps" | grep -v "^frappe$") > "$bench_dir/sites/apps.txt"
     log "Bench app directory content: $(ls -la $bench_dir/apps)"
     log "Custom app content: $(ls -la $bench_dir/apps/$app_name)"
     
