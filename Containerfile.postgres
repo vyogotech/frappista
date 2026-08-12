@@ -35,7 +35,8 @@ LABEL io.k8s.description="Single Node Environment for ERPNext (PostgreSQL)" \
 # Install base dependencies
 RUN --mount=type=cache,target=/var/cache/dnf \
     dnf -y module enable postgresql:15 && \
-    dnf install -y postgresql postgresql-server postgresql-contrib postgresql-devel && \
+    dnf -y module enable mariadb:10.11 && \
+    dnf install -y postgresql postgresql-server postgresql-contrib postgresql-devel mariadb-devel mariadb-connector-c-devel && \
     mkdir -p /var/lib/pgsql/data && \
     mkdir -p /var/run/postgresql && \
     chown -R ${FRAPPE_UID}:0 /var/lib/pgsql /var/run/postgresql && \
