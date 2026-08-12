@@ -64,9 +64,8 @@ wait_for_postgres() {
     done
     log "PostgreSQL is ready."
     
-    log "Setting up PostgreSQL users..."
-    # The running user (frappe) is the superuser by default. Set password for it.
     psql -d postgres -c "ALTER ROLE frappe WITH PASSWORD '${POSTGRES_PASSWORD}';" || true
+    createdb frappe || true
 }
 
 # Function to create a new site

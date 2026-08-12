@@ -225,7 +225,8 @@ RUN --mount=type=cache,id=pip-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe
   chown -R 1001:0 . && chmod -R ug+rwX . && \
   bench set-config --global redis_cache "redis://localhost:6379" && \
   bench set-config --global redis_queue "redis://localhost:6379" && \
-  bench set-config --global redis_socketio "redis://localhost:6379"
+  bench set-config --global redis_socketio "redis://localhost:6379" && \
+  bench set-config --global host "0.0.0.0"
 
 # Expose ports
 EXPOSE 8000
