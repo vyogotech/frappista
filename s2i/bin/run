@@ -154,7 +154,13 @@ log "Switching off Redis protection mode status - DONE with soft check"
 log "Clearing stale redis entries"
 redis-cli flushall || true
 log "Stale redis entries clearing - DONE with soft check "
-#S2I framework will manage this to run this in background
+
+log "Ensuring bench binds to 0.0.0.0"
+bench set-config --global host "0.0.0.0" || true
+if [ -f Procfile ]; then
+  sed -i 's/bench serve --port 8000/bench serve --port 8000 --host 0.0.0.0/g' Procfile
+fi
+
 bench start
 #allow remote connections to redis using redis-cli. use only for testing purpose
 
