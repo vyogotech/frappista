@@ -7,7 +7,7 @@ FROM almalinux:9 AS redis-builder
 ARG TARGETARCH
 ENV REDIS_SOURCE_VERSION=7.2.7
 RUN --mount=type=cache,target=/var/cache/dnf \
-    dnf install -y make gcc tar curl && \
+    dnf install -y --allowerasing make gcc tar curl && \
     mkdir -p /tmp/redis-build && \
     curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" | tar xzf - -C /tmp/redis-build --strip-components=1 && \
     cd /tmp/redis-build && \
