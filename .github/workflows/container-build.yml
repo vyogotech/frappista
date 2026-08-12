@@ -394,7 +394,7 @@ jobs:
 
   smoke-test:
     needs: [setup, create-manifests]
-    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
+    if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref && (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
