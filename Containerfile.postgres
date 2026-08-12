@@ -9,26 +9,25 @@ USER root
 ARG TARGETARCH
 
 ENV APP_ROOT=/opt/app-root \
-    MYSQL_UID=27 \
+    PG_UID=26 \
     FRAPPE_UID=1001
 
-# Set labels
 LABEL maintainer="Dev <dev@vyogolabs.tech>"
-LABEL io.k8s.description="Single Node Environment for ERPNext" \
-     io.k8s.display-name="Frappe Single node env for Devs" \
+LABEL io.k8s.description="Single Node Environment for ERPNext (PostgreSQL)" \
+     io.k8s.display-name="Frappe Single node env for Devs (PostgreSQL)" \
      io.openshift.expose-services="8080:http" \
-     io.openshift.tags="ERPNext,Single Node" \
+     io.openshift.tags="ERPNext,Single Node,PostgreSQL" \
      io.openshift.s2i.scripts-url=image:///usr/libexec/s2i \
      maintainer="vyogolabs.tech <dev@vyogolabs.tech>"
 
 # Install base dependencies
 RUN --mount=type=cache,target=/var/cache/dnf \
-    dnf -y module enable mariadb:10.11 && \
-    dnf install -y mariadb mariadb-server mariadb-server-utils mariadb-devel && \
-    mkdir -p /var/lib/mysql && \
-    mkdir -p /var/run/mariadb && \
-    chown -R ${MYSQL_UID}:${MYSQL_UID} /var/lib/mysql /var/run/mariadb && \
-    chmod 755 /var/lib/mysql /var/run/mariadb && \
+    dnf -y module enable postgresql:15 && \
+    dnf install -y postgresql postgresql-server postgresql-contrib postgresql-devel && \
+    mkdir -p /var/lib/pgsql/data && \
+    mkdir -p /var/run/postgresql && \
+    chown -R ${FRAPPE_UID}:0 /var/lib/pgsql /var/run/postgresql && \
+    chmod 775 /var/lib/pgsql /var/lib/pgsql/data /var/run/postgresql && \
     useradd -u ${FRAPPE_UID} -r -g 0 -d /home/frappe -s /sbin/nologin -c "Default Application User" default && \
     mkdir -p /home/frappe && \
     chown ${FRAPPE_UID}:0 /home/frappe && \
@@ -47,15 +46,13 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     xz-devel \
     libuuid-devel \
     file \
-    procps-ng \
-    mariadb-connector-c-devel && \
+    procps-ng && \
     rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/dnf.*
 
 # Install wkhtmltopdf based on architecture
 RUN --mount=type=cache,target=/var/cache/dnf \
     ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then \
-        #install jq for x86_64 \
         dnf -y install jq && \
         dnf -y install https://rpmfind.net/linux/almalinux/9/AppStream/x86_64/os/Packages/xorg-x11-fonts-75dpi-7.5-33.el9.noarch.rpm && \
         dnf -y install https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox-0.12.6.1-3.almalinux9.x86_64.rpm; \
@@ -68,8 +65,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     fi && \
     dnf clean all
 
-# Setup Redis — compile from source with MALLOC=libc to avoid jemalloc segfaults
-# under QEMU emulation (e.g. running amd64 images on Apple Silicon Macs).
+# Setup Redis
 ENV REDIS_VERSION=7 \
     REDIS_SOURCE_VERSION=7.2.7 \
     HOME=/var/lib/redis
@@ -180,15 +176,19 @@ FROM builder AS final
 USER root
 ARG TARGETARCH
 
-# Set the environment variable for MySQL
-ENV MYSQL_ROOT_PASSWORD=ChangeMe
+# Set the environment variable for Postgres
+ENV POSTGRES_PASSWORD=ChangeMe
 
 # Handle S2I scripts
 RUN if [ -f /usr/libexec/s2i/assemble ]; then mv /usr/libexec/s2i/assemble /usr/libexec/s2i/assemble.original; fi && \
     if [ -f /usr/libexec/s2i/run ]; then mv /usr/libexec/s2i/run /usr/libexec/s2i/run.original; fi
 
-# Copy and setup S2I scripts
-COPY --chown=1001:0 ./s2i/bin/* /usr/libexec/s2i/
+# Copy and setup S2I scripts specifically for Postgres
+COPY --chown=1001:0 ./s2i/bin/assemble.postgres /usr/libexec/s2i/assemble
+COPY --chown=1001:0 ./s2i/bin/run.postgres /usr/libexec/s2i/run
+COPY --chown=1001:0 ./s2i/bin/save-artifacts /usr/libexec/s2i/save-artifacts
+COPY --chown=1001:0 ./s2i/bin/usage /usr/libexec/s2i/usage
+
 RUN chmod +x /usr/libexec/s2i/* && \
     chown 1001:0 /usr/libexec/s2i/*
 
@@ -196,13 +196,10 @@ RUN chmod +x /usr/libexec/s2i/* && \
 USER frappe
 
 # Install Frappe bench and dependencies
-# frappe-bench >= 5.22 hard-codes `uv venv` during `bench init`.
-# Pin to the last pre-uv bench series so the image follows the standard
-# Python virtualenv flow instead of requiring an emulation-sensitive Rust binary.
 RUN --mount=type=cache,id=pip-final-${TARGETARCH},target=/home/frappe/.cache/pip,uid=1001,gid=0 \
     pip install "click<8.2" "frappe-bench==5.21.5" \
     && pip install redis \
-    && pip install mysql-connector-python
+    && pip install psycopg2-binary
 
 # Setup Frappe
 WORKDIR /home/frappe

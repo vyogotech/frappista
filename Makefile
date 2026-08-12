@@ -6,6 +6,7 @@ FRAPPE_BRANCH?=$(FRAPPE_VERSION)
 IMAGE_TAG?=$(FRAPPE_VERSION)
 CONTAINER ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINERFILE ?= Containerfile
+CONTAINERFILE_PG ?= Containerfile.postgres
 
 ifeq ($(CONTAINER),)
 $(error No container engine found. Install podman or docker.)
@@ -13,13 +14,17 @@ endif
 
 # Local image names (no registry prefix)
 LOCAL_IMAGE_NAME=localhost/frappe:s2i-$(IMAGE_TAG)
+LOCAL_IMAGE_NAME_PG=localhost/frappe:s2i-postgres-$(IMAGE_TAG)
 LOCAL_FRAPPE_APP_IMAGE_NAME=localhost/frappe:sne-$(IMAGE_TAG)
 LOCAL_ERP_IMAGE_NAME=localhost/erpnext:sne-$(IMAGE_TAG)
+LOCAL_ERP_IMAGE_NAME_PG=localhost/erpnext:sne-postgres-$(IMAGE_TAG)
 LOCAL_CRM_IMAGE_NAME=localhost/crm:sne-$(IMAGE_TAG)
 # Registry image names (with registry prefix for pushing)
 IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:s2i-$(IMAGE_TAG)
+IMAGE_NAME_PG=$(REGISTRY)/$(REPO)/frappe:s2i-postgres-$(IMAGE_TAG)
 FRAPPE_APP_IMAGE_NAME=$(REGISTRY)/$(REPO)/frappe:sne-$(IMAGE_TAG)
 ERP_IMAGE_NAME=$(REGISTRY)/$(REPO)/erpnext:sne-$(IMAGE_TAG)
+ERP_IMAGE_NAME_PG=$(REGISTRY)/$(REPO)/erpnext:sne-postgres-$(IMAGE_TAG)
 CRM_IMAGE_NAME=$(REGISTRY)/$(REPO)/crm:sne-$(IMAGE_TAG)
 
 # Default target
@@ -102,6 +107,55 @@ push-manifest: remove-manifests push-only-amd64 push-only-arm64
 	@echo "Successfully pushed multi-arch manifest $(IMAGE_NAME)"
 
 
+# Build for current architecture (PostgreSQL)
+.PHONY: build-postgres
+build-postgres:
+	$(CONTAINER) build -f $(CONTAINERFILE_PG) -t $(LOCAL_IMAGE_NAME_PG) . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH) --build-arg TARGETARCH=$(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
+# Build for AMD64 (PostgreSQL)
+.PHONY: build-postgres-amd64
+build-postgres-amd64:
+	$(CONTAINER) build -f $(CONTAINERFILE_PG) --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME_PG)-amd64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH) --build-arg TARGETARCH=amd64
+
+# Build for ARM64 (PostgreSQL)
+.PHONY: build-postgres-arm64
+build-postgres-arm64:
+	@echo "Building $(LOCAL_IMAGE_NAME_PG)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION)"
+	$(CONTAINER) build -f $(CONTAINERFILE_PG) --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME_PG)-arm64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_BRANCH) --build-arg TARGETARCH=arm64
+	@echo "Build completed. Verifying image was created:"
+	$(CONTAINER) images $(LOCAL_IMAGE_NAME_PG)-arm64
+
+# Push Postgres targets
+.PHONY: push-postgres push-postgres-only-amd64 push-postgres-only-arm64 push-postgres-manifest
+push-postgres:
+	$(CONTAINER) tag $(LOCAL_IMAGE_NAME_PG) $(IMAGE_NAME_PG)
+	$(CONTAINER) push $(IMAGE_NAME_PG)
+
+push-postgres-only-amd64:
+	@echo "Tagging and pushing Postgres AMD64 image..."
+	$(CONTAINER) tag $(LOCAL_IMAGE_NAME_PG)-amd64 $(IMAGE_NAME_PG)-amd64
+	$(CONTAINER) push $(IMAGE_NAME_PG)-amd64
+	@echo "Successfully pushed $(IMAGE_NAME_PG)-amd64"
+
+push-postgres-only-arm64:
+	@echo "Tagging and pushing Postgres ARM64 image..."
+	$(CONTAINER) tag $(LOCAL_IMAGE_NAME_PG)-arm64 $(IMAGE_NAME_PG)-arm64
+	$(CONTAINER) push $(IMAGE_NAME_PG)-arm64
+	@echo "Successfully pushed $(IMAGE_NAME_PG)-arm64"
+
+.PHONY: remove-postgres-manifests
+remove-postgres-manifests:
+	$(CONTAINER) manifest exists $(IMAGE_NAME_PG) && $(CONTAINER) manifest rm $(IMAGE_NAME_PG) || true
+	$(CONTAINER) manifest exists $(IMAGE_NAME_PG)-$(IMAGE_TAG) && $(CONTAINER) manifest rm $(IMAGE_NAME_PG)-$(IMAGE_TAG) || true
+
+push-postgres-manifest: remove-postgres-manifests push-postgres-only-amd64 push-postgres-only-arm64
+	@echo "Creating multi-arch manifest for $(IMAGE_NAME_PG)..."
+	$(CONTAINER) manifest create $(IMAGE_NAME_PG) $(IMAGE_NAME_PG)-amd64 $(IMAGE_NAME_PG)-arm64
+	@echo "Pushing manifest..."
+	$(CONTAINER) manifest push --all $(IMAGE_NAME_PG) docker://$(IMAGE_NAME_PG)
+	@echo "Successfully pushed multi-arch manifest $(IMAGE_NAME_PG)"
+
+
 # Frappe Runnable App builds
 .PHONY: frappe-app frappe-app-amd64 frappe-app-arm64
 frappe-app: build
@@ -179,17 +233,62 @@ push-erpnext:
 	$(CONTAINER) manifest push --all $(ERP_IMAGE_NAME) docker://$(ERP_IMAGE_NAME)
 	@echo "Successfully pushed multi-arch manifest $(ERP_IMAGE_NAME)"
 
+
+# ERPNext PostgreSQL builds
+.PHONY: erpnext-postgres erpnext-postgres-amd64 erpnext-postgres-arm64
+erpnext-postgres:
+	./s2i-podman.sh test/erpnext $(LOCAL_ERP_IMAGE_NAME_PG) $(LOCAL_IMAGE_NAME_PG) --frappe-branch=$(FRAPPE_BRANCH)
+
+erpnext-postgres-amd64: build-postgres-amd64
+	./s2i-podman.sh --arch amd64 test/erpnext $(LOCAL_ERP_IMAGE_NAME_PG)-amd64 $(LOCAL_IMAGE_NAME_PG)-amd64 --frappe-branch=$(FRAPPE_BRANCH)
+
+erpnext-postgres-arm64: build-postgres-arm64
+	./s2i-podman.sh --arch arm64 test/erpnext $(LOCAL_ERP_IMAGE_NAME_PG)-arm64 $(LOCAL_IMAGE_NAME_PG)-arm64 --frappe-branch=$(FRAPPE_BRANCH)
+
+# Remove ERPNext PostgreSQL manifests
+.PHONY: remove-erpnext-postgres-manifests
+remove-erpnext-postgres-manifests:
+	$(CONTAINER) manifest exists $(ERP_IMAGE_NAME_PG) && $(CONTAINER) manifest rm $(ERP_IMAGE_NAME_PG) || true
+	$(CONTAINER) manifest exists $(ERP_IMAGE_NAME_PG)-$(IMAGE_TAG) && $(CONTAINER) manifest rm $(ERP_IMAGE_NAME_PG)-$(IMAGE_TAG) || true
+
+# Create and push ERPNext PostgreSQL multi-arch manifest
+.PHONY: erpnext-postgres-manifest
+erpnext-postgres-manifest: remove-erpnext-postgres-manifests push-erpnext-postgres
+
+# Push ERPNext PostgreSQL images
+.PHONY: push-erpnext-postgres
+push-erpnext-postgres:
+	@echo "Tagging and pushing ERPNext PostgreSQL AMD64 image..."
+	$(CONTAINER) tag $(LOCAL_ERP_IMAGE_NAME_PG)-amd64 $(ERP_IMAGE_NAME_PG)-amd64
+	$(CONTAINER) push $(ERP_IMAGE_NAME_PG)-amd64
+	@echo "Successfully pushed $(ERP_IMAGE_NAME_PG)-amd64"
+	
+	@echo "Tagging and pushing ERPNext PostgreSQL ARM64 image..."
+	$(CONTAINER) tag $(LOCAL_ERP_IMAGE_NAME_PG)-arm64 $(ERP_IMAGE_NAME_PG)-arm64
+	$(CONTAINER) push $(ERP_IMAGE_NAME_PG)-arm64
+	@echo "Successfully pushed $(ERP_IMAGE_NAME_PG)-arm64"
+
+	@echo "Creating multi-arch manifest for $(ERP_IMAGE_NAME_PG)..."
+	$(CONTAINER) manifest create $(ERP_IMAGE_NAME_PG) $(ERP_IMAGE_NAME_PG)-amd64 $(ERP_IMAGE_NAME_PG)-arm64
+	@echo "Pushing manifest..."
+	$(CONTAINER) manifest push --all $(ERP_IMAGE_NAME_PG) docker://$(ERP_IMAGE_NAME_PG)
+	@echo "Successfully pushed multi-arch manifest $(ERP_IMAGE_NAME_PG)"
+
 # Clean up images and manifests
 .PHONY: clean clean-manifests
 clean:
 	$(CONTAINER) rmi -f $(LOCAL_IMAGE_NAME) $(LOCAL_IMAGE_NAME)-amd64 $(LOCAL_IMAGE_NAME)-arm64 || true
+	$(CONTAINER) rmi -f $(LOCAL_IMAGE_NAME_PG) $(LOCAL_IMAGE_NAME_PG)-amd64 $(LOCAL_IMAGE_NAME_PG)-arm64 || true
 	$(CONTAINER) rmi -f $(LOCAL_FRAPPE_APP_IMAGE_NAME) $(LOCAL_FRAPPE_APP_IMAGE_NAME)-amd64 $(LOCAL_FRAPPE_APP_IMAGE_NAME)-arm64 || true
 	$(CONTAINER) rmi -f $(LOCAL_ERP_IMAGE_NAME) $(LOCAL_ERP_IMAGE_NAME)-amd64 $(LOCAL_ERP_IMAGE_NAME)-arm64 || true
+	$(CONTAINER) rmi -f $(LOCAL_ERP_IMAGE_NAME_PG) $(LOCAL_ERP_IMAGE_NAME_PG)-amd64 $(LOCAL_ERP_IMAGE_NAME_PG)-arm64 || true
 	$(CONTAINER) rmi -f $(IMAGE_NAME) $(IMAGE_NAME)-amd64 $(IMAGE_NAME)-arm64 || true
+	$(CONTAINER) rmi -f $(IMAGE_NAME_PG) $(IMAGE_NAME_PG)-amd64 $(IMAGE_NAME_PG)-arm64 || true
 	$(CONTAINER) rmi -f $(FRAPPE_APP_IMAGE_NAME) $(FRAPPE_APP_IMAGE_NAME)-amd64 $(FRAPPE_APP_IMAGE_NAME)-arm64 || true
 	$(CONTAINER) rmi -f $(ERP_IMAGE_NAME) $(ERP_IMAGE_NAME)-amd64 $(ERP_IMAGE_NAME)-arm64 || true
+	$(CONTAINER) rmi -f $(ERP_IMAGE_NAME_PG) $(ERP_IMAGE_NAME_PG)-amd64 $(ERP_IMAGE_NAME_PG)-arm64 || true
 
-clean-manifests: remove-manifests remove-frappe-app-manifests remove-erpnext-manifests
+clean-manifests: remove-manifests remove-frappe-app-manifests remove-erpnext-manifests remove-postgres-manifests remove-erpnext-postgres-manifests
 
 # Frappe CRM builds - modified version
 .PHONY: frappe-crm-develop frappe-crm-develop-amd64 frappe-crm-develop-arm64

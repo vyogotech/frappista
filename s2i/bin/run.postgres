@@ -1,0 +1,169 @@
+#!/bin/bash -e
+#
+# S2I run script for the 'vyogotech/frappe:s2i-base-postgres' image.
+# The run script executes the server that runs your application.
+#
+
+# Set up logging and error handling
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+error() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $1" >&2
+  exit 1
+}
+
+# Create pid directory
+mkdir -p /tmp/pids
+mkdir -p /tmp/redis
+
+# Keep Redis ephemeral in SNE mode so stale cached HTML does not survive
+# image rebuilds and point at old hashed asset filenames.
+rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
+
+# Ensure required commands are available
+command -v postgres >/dev/null 2>&1 || error "postgres is not installed. Please install PostgreSQL."
+command -v redis-server >/dev/null 2>&1 || error "redis-server is not installed. Please install Redis."
+command -v bench >/dev/null 2>&1 || error "bench is not installed. Please install Bench."
+
+# Start PostgreSQL with proper daemonization
+log "Starting PostgreSQL..."
+mkdir -p /var/run/postgresql /var/lib/pgsql/data
+chown -R 1001:0 /var/run/postgresql /var/lib/pgsql || true
+chmod 700 /var/lib/pgsql/data || true
+
+if [ ! -s "/var/lib/pgsql/data/PG_VERSION" ]; then
+    log "Initializing PostgreSQL database..."
+    initdb -D /var/lib/pgsql/data > /dev/null
+    
+    # Configure PG to accept connections
+    echo "host all all 0.0.0.0/0 md5" > /var/lib/pgsql/data/pg_hba.conf
+    echo "host all all 127.0.0.1/32 md5" >> /var/lib/pgsql/data/pg_hba.conf
+    echo "local all all trust" >> /var/lib/pgsql/data/pg_hba.conf
+    echo "listen_addresses = '*'" > /var/lib/pgsql/data/postgresql.conf
+    echo "unix_socket_directories = '/var/run/postgresql'" >> /var/lib/pgsql/data/postgresql.conf
+fi
+
+# Start postgres
+postgres -D /var/lib/pgsql/data &> /var/log/postgresql.log &
+PG_PID=$!
+echo $PG_PID > /tmp/pids/postgres.pid
+
+log "Waiting for PostgreSQL to be ready..."
+MAX_TRIES=30
+RETRY_COUNT=0
+until pg_isready -h localhost &>/dev/null || [ $RETRY_COUNT -ge $MAX_TRIES ]; do
+  if ! kill -0 "$PG_PID" 2>/dev/null; then
+    error "PostgreSQL process started but died immediately. Check /var/log/postgresql.log for details."
+  fi
+  sleep 1
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+done
+
+if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
+  error "PostgreSQL failed to respond within ${MAX_TRIES} seconds. Check /var/log/postgresql.log for details."
+fi
+
+log "PostgreSQL started successfully with PID $PG_PID."
+# Set Password for postgres user
+psql -d postgres -c "ALTER ROLE frappe WITH PASSWORD '${POSTGRES_PASSWORD:-ChangeMe}';" || true
+
+# Start Redis server with proper daemonization
+log "Starting Redis server..."
+if redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG &> /var/log/redis.log; then
+  log "Waiting for Redis server to be ready..."
+  MAX_TRIES=15
+  RETRY_COUNT=0
+  until redis-cli ping &>/dev/null || [ $RETRY_COUNT -ge $MAX_TRIES ]; do
+    PID=$(cat /tmp/pids/redis.pid 2>/dev/null || true)
+    if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
+      if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+        error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
+      fi
+      error "Redis process started but died immediately. Check /var/log/redis.log for details."
+    fi
+    sleep 1
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+  done
+
+  if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
+    error "Redis server failed to respond within ${MAX_TRIES} seconds. Check /var/log/redis.log for details."
+  fi
+
+  log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
+else
+  if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+    error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
+  fi
+  error "Failed to start Redis server."
+fi
+
+# Function to handle cleanup on exit
+cleanup() {
+  log "Stopping services..."
+  
+  if [ -f /tmp/pids/redis.pid ]; then
+    redis-cli shutdown || kill -15 $(cat /tmp/pids/redis.pid)
+    log "Redis server stopped."
+  fi
+  
+  if [ -f /tmp/pids/postgres.pid ]; then
+    pg_ctl stop -D /var/lib/pgsql/data -m fast || kill -15 $(cat /tmp/pids/postgres.pid)
+    log "PostgreSQL stopped."
+  fi
+  
+  log "All services stopped."
+  exit 0
+}
+
+# Register cleanup function for graceful shutdown
+trap cleanup SIGINT SIGTERM
+
+# This section will handle the local compose when app is just mounted
+log "Registering apps..."
+cd /home/frappe/frappe-bench
+apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+apps_in_txt=($(cat sites/apps.txt))
+for app in "${apps_list[@]}"; do
+  app_name=$(basename "$app")
+  env/bin/python3 -m pip install -e "./apps/${app_name}" || true
+  log "Building assets for custom app $app_name..."
+  if [[ ! " ${apps_in_txt[@]} " =~ " ${app_name} " ]]; then
+    log "Registered app: $app_name"
+  else
+    log "App $app_name already registered."
+  fi
+done
+ls -1 apps/ > sites/apps.txt
+log "All apps registered."
+
+# Restore pre-built assets from image cache
+if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
+  if [ -d "/home/frappe/assets_cache" ] && [ -n "$(ls -A /home/frappe/assets_cache 2>/dev/null)" ]; then
+    if [ ! -d "sites/assets/frappe" ]; then
+      log "Restoring assets from image cache..."
+      mkdir -p sites/assets
+      cp -r /home/frappe/assets_cache/. sites/assets/
+      log "Assets restored."
+    else
+      log "Assets already present, skipping restore."
+    fi
+  else
+    log "Warning: No assets_cache found. Assets will be built by bench start."
+  fi
+fi
+
+# Start Frappe/ERPNext with bench in foreground
+log "Starting Frappe/ERPNext with bench..."
+
+log "Switching off Redis protection mode"
+redis-cli CONFIG SET protected-mode no  || true
+log "Switching off Redis protection mode status - DONE with soft check"
+log "Clearing stale redis entries"
+redis-cli flushall || true
+log "Stale redis entries clearing - DONE with soft check "
+
+bench start
+
+error "Bench exited unexpectedly!"

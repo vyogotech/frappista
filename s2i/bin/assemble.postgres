@@ -1,0 +1,317 @@
+#!/bin/bash -e
+set -e
+# Log function for consistent logging
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] $1"
+}
+
+# Function to start PostgreSQL service
+start_postgres() {
+    log "Starting PostgreSQL service."
+    mkdir -p /var/lib/pgsql/data /var/run/postgresql
+    chown -R 1001:0 /var/lib/pgsql /var/run/postgresql || true
+    chmod 700 /var/lib/pgsql/data || true
+    
+    if [ ! -s "/var/lib/pgsql/data/PG_VERSION" ]; then
+        log "Initializing PostgreSQL database..."
+        initdb -D /var/lib/pgsql/data > /dev/null
+    fi
+    
+    # Configure PG to accept connections locally and from any IP (for linking/exposing)
+    echo "host all all 0.0.0.0/0 md5" > /var/lib/pgsql/data/pg_hba.conf
+    echo "host all all 127.0.0.1/32 md5" >> /var/lib/pgsql/data/pg_hba.conf
+    # Allow trust connection for local unix domain socket connections during assembly
+    echo "local all all trust" >> /var/lib/pgsql/data/pg_hba.conf
+    echo "listen_addresses = '*'" > /var/lib/pgsql/data/postgresql.conf
+    echo "unix_socket_directories = '/var/run/postgresql'" >> /var/lib/pgsql/data/postgresql.conf
+    
+    # Start postgres in background
+    postgres -D /var/lib/pgsql/data &> /var/log/postgresql.log &
+    log "PostgreSQL service started in background."
+}
+
+start_redis()
+{
+    log "Starting Redis server."
+    mkdir -p /tmp/pids
+    mkdir -p /tmp/redis
+    rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
+    if ! redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG 2>/var/log/redis.log; then
+        if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+            log "[ERROR] Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make build-arm64"
+        fi
+        log "[ERROR] Failed to start Redis. Check /var/log/redis.log"
+        exit 1
+    fi
+    log "Redis server started."
+}
+
+wait_for_redis() {
+    log "Waiting for Redis to be ready..."
+    until redis-cli ping &>/dev/null; do
+        echo "Redis is not ready yet. Retrying in 2 seconds..."
+        sleep 2
+    done
+    log "Redis is ready."
+}
+
+# Function to wait for PostgreSQL to be ready
+wait_for_postgres() {
+    log "Waiting for PostgreSQL to be ready..."
+    until pg_isready -h localhost &>/dev/null; do
+        echo "PostgreSQL is not ready yet. Retrying in 2 seconds..."
+        sleep 2
+    done
+    log "PostgreSQL is ready."
+    
+    log "Setting up PostgreSQL users..."
+    # The running user (frappe) is the superuser by default. Set password for it.
+    psql -d postgres -c "ALTER ROLE frappe WITH PASSWORD '${POSTGRES_PASSWORD}';" || true
+}
+
+# Function to create a new site
+create_site() {
+    local prev_pwd=$(pwd)
+    cd /home/frappe/frappe-bench
+    log "Creating new site..."
+    local site_name=$1
+    local admin_password=$2
+    log "Creating new site: $site_name..."
+    bench new-site "$site_name" \
+        --admin-password "$admin_password" \
+        --db-type postgres \
+        --db-root-username frappe \
+        --db-root-password "$POSTGRES_PASSWORD"
+    
+    log "Installing apps to site: $site_name..."
+
+    # Use find instead of ls to handle spaces in directory names
+    apps_list=($(find apps/ -maxdepth 1 -mindepth 1 -type d -name "*" ! -name "frappe"))
+
+    if [[ ${#apps_list[@]} -gt 0 ]]; then
+        for app in "${apps_list[@]}"; do
+            app_name=$(basename "$app")
+            log "Installing $app_name to $site_name..."
+            bench --site "$site_name" install-app "$app_name"
+        done
+    else
+        log "No apps found to install (excluding frappe)."
+    fi
+    
+    log "Setting $site_name as default site..."
+    bench use "$site_name"
+    cd "$prev_pwd"
+}
+
+# Function to detect app name from source
+get_app_name() {
+    local src_path="/tmp/src"
+    local app_name=""
+    
+    # If we have exactly one directory in /tmp/src, check if it's a Frappe app
+    if [ $(find ${src_path} -maxdepth 1 -type d | wc -l) -eq 2 ]; then
+      # Get the directory name (excluding /tmp/src itself)
+      subdir=$(find ${src_path} -maxdepth 1 -type d -not -path "${src_path}" -printf "%f\n")
+      
+      # Check if this is a Frappe app by looking for standard files in the subdirectory
+      # First check if hooks.py exists
+      if [[ -f "${src_path}/${subdir}/hooks.py" ]]; then
+        app_name=$subdir
+      # If no hooks.py, check if there's an app name in pyproject.toml
+      elif [[ -f "${src_path}/${subdir}/pyproject.toml" ]]; then
+        app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/${subdir}/pyproject.toml" 2>/dev/null)
+      # Finally check package.json
+      elif [[ -f "${src_path}/${subdir}/package.json" ]]; then
+        app_name=$(jq -r '.name' "${src_path}/${subdir}/package.json" 2>/dev/null)
+      fi
+      
+      # If still no app name found but the directory exists, use the directory name
+      if [[ -z "$app_name" && -n "$subdir" ]]; then
+        app_name=$subdir
+      fi
+    else
+      # Standard checks for app name in the root of /tmp/src
+      if [[ -f "${src_path}/pyproject.toml" ]]; then
+        app_name=$(tomlq -r 'tool.poetry.name' "${src_path}/pyproject.toml" 2>/dev/null)
+      elif [[ -f "${src_path}/package.json" ]]; then
+        app_name=$(jq -r '.name' "${src_path}/package.json" 2>/dev/null)
+      elif [[ -f "${src_path}/hooks.py" ]]; then
+        app_name=$(grep -oP '(?<=app_name = ")[^"]*' "${src_path}/hooks.py" 2>/dev/null)
+      fi
+      
+      # Check for app_name in any hooks.py files
+      if [[ -z "$app_name" ]]; then
+        for hooks_file in ${src_path}/*/hooks.py; do
+          if [[ -f "$hooks_file" ]]; then
+            dir_name=$(dirname "$hooks_file" | xargs basename)
+            app_name=$(grep -oP '(?<=app_name = ")[^"]*' "$hooks_file" 2>/dev/null || echo "$dir_name")
+            if [[ ! -z "$app_name" ]]; then
+              break
+            fi
+          fi
+        done
+      fi
+    fi
+
+    echo "$app_name"
+}
+
+# Start of main script
+if [[ "$1" == "-h" ]]; then
+    exec /usr/libexec/s2i/usage
+fi
+
+# Record initial directory
+WORKDIR=$(pwd)
+log "Starting assemble script in directory: $WORKDIR"
+
+# Restore artifacts from the previous build
+if [ "$(ls -A /tmp/artifacts/ 2>/dev/null)" ]; then
+    log "Restoring build artifacts..."
+    if [ -d "/tmp/artifacts/home" ]; then
+        cp -Rf /tmp/artifacts/home/* /home/
+        rm -rf /tmp/artifacts/home
+    fi
+    mv /tmp/artifacts/* ./ 2>/dev/null || true
+fi
+
+log "Installing application source..."
+log "Source directory content: $(ls -la /tmp/src)"
+
+# Start PostgreSQL service early
+log "---Setting up environment for app installation------"
+start_postgres
+wait_for_postgres
+start_redis
+wait_for_redis
+log "PostgreSQL and Redis services started successfully."
+
+log "Setting up Frappe components..."
+
+# Custom app detection
+log "Custom app detection..."
+app_name=$(get_app_name)
+
+# Set bench directory
+if [[ -f /tmp/src/bench-config.json ]]; then
+    log "Setting up Frappe bench using bench-config.json..."
+    bench_name=$(jq -r '.bench_name' /tmp/src/bench-config.json)
+    branch=$(jq -r '.branch' /tmp/src/bench-config.json)
+    
+    # Ensure we're in the right directory before init
+    cd /home/frappe
+    bench init --frappe-path . --frappe-branch "$branch" \
+        --python $(which python3) "$bench_name"
+    bench_dir="/home/frappe/$bench_name"
+else
+    log "Using default bench directory: /home/frappe/frappe-bench"
+    bench_dir="/home/frappe/frappe-bench"
+fi
+
+# Configure Redis
+cd "$bench_dir"
+bench set-config --global redis_cache "redis://localhost:6379"
+bench set-config --global redis_queue "redis://localhost:6379"
+bench set-config --global redis_socketio "redis://localhost:6379"
+
+# Handle apps.json if it exists in source
+if [[ -f /tmp/src/apps.json ]]; then
+    log "Installing Frappe apps from apps.json..."
+    jq -c '.[]' /tmp/src/apps.json | while read app; do
+        app_name=$(echo $app | jq -r '.name')
+        app_url=$(echo $app | jq -r '.url')
+        app_branch=$(echo $app | jq -r '.branch')
+        if [[ -z "$app_name" || -z "$app_url" || -z "$app_branch" ]]; then
+            log "[ERROR] Missing app details in apps.json. Skipping..."
+            continue
+        fi
+        log "Installing $app_name from $app_url ($app_branch)..."
+        if ! bench get-app "$app_name" "$app_url" --branch "$app_branch"; then
+            log "[ERROR] Failed to install $app_name from $app_url ($app_branch). Skipping..."
+            continue
+        fi
+    done
+fi
+
+# Handle custom app if detected
+if [[ -z "$app_name" ]]; then
+    log "No custom app detected in source. Skipping custom app setup..."
+else
+    log "Custom app detected: $app_name"
+    IS_CUSTOM_APP=true
+    CUSTOM_APP_NAME=$app_name
+    
+    log "Setting up apps directory if needed..."
+    mkdir -p "$bench_dir/apps"
+    
+    log "Copying custom app $app_name to apps/ directory..."
+    # Check if we're working with a subdirectory
+    if [[ -d "/tmp/src/$app_name" ]]; then
+        mkdir -p "$bench_dir/apps/$app_name"
+        cp -Rf "/tmp/src/$app_name/"* "$bench_dir/apps/$app_name/"
+    else
+        # We're working with files in the root of /tmp/src
+        mkdir -p "$bench_dir/apps/$app_name"
+        cp -Rf /tmp/src/* "$bench_dir/apps/$app_name/"
+    fi
+    
+    log "Updating apps.txt..."
+    cd "$bench_dir"
+    ls -1 "$bench_dir/apps" > "$bench_dir/sites/apps.txt"
+    log "Bench app directory content: $(ls -la $bench_dir/apps)"
+    log "Custom app content: $(ls -la $bench_dir/apps/$app_name)"
+    
+    log "Installing custom app $app_name as development package..."
+    cd "$bench_dir"
+    env/bin/python3 -m pip install -e "./apps/${CUSTOM_APP_NAME}"
+    
+    # Remove git directories to reduce size
+    find "$bench_dir/apps/${CUSTOM_APP_NAME}" -name .git -type d -exec rm -rf {} + 2>/dev/null || true
+    log "Custom app $app_name setup completed."
+fi
+
+log "Building assets for bench..."
+cd "$bench_dir"
+bench build --production
+
+# Site creation
+cd "$bench_dir"
+if [[ -f /tmp/src/site-config.json ]]; then
+    site_name=$(jq -r '.site_name' /tmp/src/site-config.json)
+    admin_password=$(jq -r '.admin_password' /tmp/src/site-config.json)
+    create_site "$site_name" "$admin_password"
+else
+    site_name="dev.localhost"
+    log "site-config.json not found. Using default site: $site_name..."
+    if ! bench --site "$site_name" show-config >/dev/null 2>&1; then
+        create_site "$site_name" "admin"
+    else
+        log "Default site $site_name already exists. Skipping creation..."
+    fi
+fi
+
+log "Clearing Frappe cache..."
+bench --site "$site_name" clear-cache || true
+log "Flushing Redis cache and queue..."
+
+log "Fixing permissions..."
+
+# Cache built assets
+if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
+    cd "$bench_dir"
+    if [ -d "sites/assets" ] && [ -n "$(ls -A sites/assets 2>/dev/null)" ]; then
+        log "Caching built assets to /home/frappe/assets_cache..."
+        mkdir -p /home/frappe/assets_cache
+        rm -rf /home/frappe/assets_cache/*
+        cp -r sites/assets/. /home/frappe/assets_cache/
+        log "Assets cached successfully."
+    else
+        log "Warning: No assets found to cache."
+    fi
+fi
+
+# Cleanup redis entries
+redis-cli flushall 
+# Return to initial directory
+cd "$WORKDIR"
+log "Assemble completed successfully."
