@@ -29,6 +29,10 @@ on:
         type: boolean
         required: false
         default: false
+      database:
+        description: 'Database backend to build (mariadb, postgres, all)'
+        required: false
+        default: 'all'
 
 jobs:
   setup:
@@ -37,6 +41,7 @@ jobs:
       version: ${{ steps.vars.outputs.version }}
       image_tag: ${{ steps.vars.outputs.image_tag }}
       components: ${{ steps.components.outputs.components }}
+      database: ${{ steps.database.outputs.database }}
       cache-key: ${{ steps.cache-key.outputs.hash }}
       should_build: ${{ steps.check_shas.outputs.should_build }}
     steps:
@@ -73,6 +78,12 @@ jobs:
         run: |
           COMPONENTS="${{ github.event.inputs.components || 'frappe,erpnext' }}"
           echo "components=$COMPONENTS" >> "$GITHUB_OUTPUT"
+
+      - name: Parse database
+        id: database
+        run: |
+          DATABASE="${{ github.event.inputs.database || 'all' }}"
+          echo "database=$DATABASE" >> "$GITHUB_OUTPUT"
 
       - name: Restore SHA cache
         id: restore-sha
@@ -163,7 +174,7 @@ jobs:
             podman-build-amd64-${{ runner.os }}-
 
       - name: Build and Push Frappe - AMD64
-        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && (contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext'))
         run: |
           make build-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -172,7 +183,7 @@ jobs:
           fi
 
       - name: Build and Push Frappe App - AMD64
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'frappe')
         run: |
           make frappe-app-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -182,7 +193,7 @@ jobs:
           fi
 
       - name: Build and Push ERPNext - AMD64
-        if: contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -192,7 +203,7 @@ jobs:
           fi
 
       - name: Build and Push Frappe (PostgreSQL) - AMD64
-        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'postgres') && (contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext'))
         run: |
           make build-postgres-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -201,7 +212,7 @@ jobs:
           fi
 
       - name: Build and Push ERPNext (PostgreSQL) - AMD64
-        if: contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'postgres') && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-postgres-amd64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -254,7 +265,7 @@ jobs:
             podman-build-arm64-${{ runner.os }}-
 
       - name: Build and Push Frappe - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && (contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext'))
         run: |
           make build-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -263,7 +274,7 @@ jobs:
           fi
 
       - name: Build and Push Frappe App - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'frappe')
         run: |
           make frappe-app-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -273,7 +284,7 @@ jobs:
           fi
 
       - name: Build and Push ERPNext - ARM64
-        if: contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -283,7 +294,7 @@ jobs:
           fi
 
       - name: Build and Push Frappe (PostgreSQL) - ARM64
-        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'postgres') && (contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext'))
         run: |
           make build-postgres-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -292,7 +303,7 @@ jobs:
           fi
 
       - name: Build and Push ERPNext (PostgreSQL) - ARM64
-        if: contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'postgres') && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           make erpnext-postgres-arm64 FRAPPE_VERSION=${{ needs.setup.outputs.version }} IMAGE_TAG=${{ needs.setup.outputs.image_tag }}
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
@@ -320,7 +331,7 @@ jobs:
           sudo systemctl restart podman || true
 
       - name: Create Frappe Multi-arch Manifest
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:s2i-${{ needs.setup.outputs.image_tag }}"
@@ -328,7 +339,7 @@ jobs:
           podman manifest push --all $IMAGE docker://$IMAGE
 
       - name: Create Frappe App Multi-arch Manifest
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:sne-${{ needs.setup.outputs.image_tag }}"
@@ -336,7 +347,7 @@ jobs:
           podman manifest push --all $IMAGE docker://$IMAGE
 
       - name: Create ERPNext Multi-arch Manifest
-        if: contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'mariadb') && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-${{ needs.setup.outputs.image_tag }}"
@@ -344,7 +355,7 @@ jobs:
           podman manifest push --all $IMAGE docker://$IMAGE
 
       - name: Create Frappe (PostgreSQL) Multi-arch Manifest
-        if: contains(needs.setup.outputs.components, 'frappe')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'postgres') && contains(needs.setup.outputs.components, 'frappe')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frappe:s2i-postgres-${{ needs.setup.outputs.image_tag }}"
@@ -352,7 +363,7 @@ jobs:
           podman manifest push --all $IMAGE docker://$IMAGE
 
       - name: Create ERPNext (PostgreSQL) Multi-arch Manifest
-        if: contains(needs.setup.outputs.components, 'erpnext')
+        if: (needs.setup.outputs.database == 'all' || needs.setup.outputs.database == 'postgres') && contains(needs.setup.outputs.components, 'erpnext')
         run: |
           podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
           IMAGE="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-postgres-${{ needs.setup.outputs.image_tag }}"
