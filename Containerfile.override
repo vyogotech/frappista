@@ -1,5 +1,0 @@
-FROM localhost/erpnext:sne-postgres-develop
-USER root
-COPY ./s2i/bin/run.postgres /usr/libexec/s2i/run
-RUN chmod +x /usr/libexec/s2i/run && chown 1001:0 /usr/libexec/s2i/run
-USER 1001
