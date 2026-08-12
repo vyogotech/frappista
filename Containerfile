@@ -2,6 +2,18 @@
 # check=skip=InvalidBaseImagePlatform
 ARG TARGETARCH=amd64
 
+# Stage 0: Build Redis
+FROM almalinux:9 AS redis-builder
+ARG TARGETARCH
+ENV REDIS_SOURCE_VERSION=7.2.7
+RUN --mount=type=cache,target=/var/cache/dnf \
+    dnf install -y make gcc tar curl && \
+    mkdir -p /tmp/redis-build && \
+    curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" | tar xzf - -C /tmp/redis-build --strip-components=1 && \
+    cd /tmp/redis-build && \
+    make MALLOC=libc CFLAGS="-fno-lto" -j$(nproc) && \
+    make install PREFIX=/usr/local
+
 # Stage 1: Base image with tools and dependencies
 # Using almalinux:9 as base for true multi-arch support (amd64 and arm64) without UBI subscription limits
 FROM almalinux:9 AS builder
@@ -68,23 +80,14 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     fi && \
     dnf clean all
 
-# Setup Redis — compile from source with MALLOC=libc to avoid jemalloc segfaults
-# under QEMU emulation (e.g. running amd64 images on Apple Silicon Macs).
+# Setup Redis — copy from cached builder stage
 ENV REDIS_VERSION=7 \
-    REDIS_SOURCE_VERSION=7.2.7 \
     HOME=/var/lib/redis
 RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
-    usermod -l redis -aG redis -c 'Redis Server' default &> /dev/null && \
-    dnf -y install policycoreutils make gcc && \
-    dnf -y clean all --enablerepo='*'
+    usermod -l redis -aG redis -c 'Redis Server' default &> /dev/null
 
-RUN --mount=type=cache,id=redis-${REDIS_SOURCE_VERSION}-${TARGETARCH},target=/tmp/redis-build \
-    cd /tmp/redis-build && \
-    if [ ! -f Makefile ]; then \
-        curl -fsSL "https://download.redis.io/releases/redis-${REDIS_SOURCE_VERSION}.tar.gz" | tar xzf - --strip-components=1; \
-    fi && \
-    make MALLOC=libc CFLAGS="-fno-lto" -j$(nproc) && \
-    make install PREFIX=/usr
+COPY --from=redis-builder /usr/local/bin/redis-server /usr/bin/redis-server
+COPY --from=redis-builder /usr/local/bin/redis-cli /usr/bin/redis-cli
 
 RUN redis-server --version | grep -qe "^Redis server v=$REDIS_VERSION\." && echo "Found VERSION $REDIS_VERSION" && \
     mkdir -p /var/lib/redis/data && chown -R redis.0 /var/lib/redis && \
