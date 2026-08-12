@@ -153,7 +153,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
-          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          # Configure containers.conf safely without duplicating [engine] section
+          mkdir -p ~/.config/containers
+          echo -e "[engine]\nenable_inheritable = true" > ~/.config/containers/containers.conf
+          if [ -f /etc/containers/containers.conf ]; then
+            if grep -q "\[engine\]" /etc/containers/containers.conf; then
+              sudo sed -i '/\[engine\]/a enable_inheritable = true' /etc/containers/containers.conf
+            else
+              echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+            fi
+          else
+            sudo mkdir -p /etc/containers && echo -e "[engine]\nenable_inheritable = true" | sudo tee /etc/containers/containers.conf
+          fi
           sudo systemctl restart podman || true
           wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
           mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
@@ -244,7 +255,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman qemu-user-static
-          echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+          # Configure containers.conf safely without duplicating [engine] section
+          mkdir -p ~/.config/containers
+          echo -e "[engine]\nenable_inheritable = true" > ~/.config/containers/containers.conf
+          if [ -f /etc/containers/containers.conf ]; then
+            if grep -q "\[engine\]" /etc/containers/containers.conf; then
+              sudo sed -i '/\[engine\]/a enable_inheritable = true' /etc/containers/containers.conf
+            else
+              echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
+            fi
+          else
+            sudo mkdir -p /etc/containers && echo -e "[engine]\nenable_inheritable = true" | sudo tee /etc/containers/containers.conf
+          fi
           sudo systemctl restart podman || true
           wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
           mkdir -p s2i-temp && tar -xvf source-to-image-*.tar.gz -C s2i-temp
