@@ -89,7 +89,7 @@ Now, any changes you make in your local `./my_custom_app` folder will immediatel
 Prefer running Frappe directly on a Linux host instead of in a container? The
 snap and native distribution packages are built from a separate repository:
 
-**[Frappium](https://github.com/vyogotech/Frappium)** *(private)*
+**[frappium](https://github.com/vyogotech/frappium)** *(private)*
 
 ```bash
 # Debian / Ubuntu
