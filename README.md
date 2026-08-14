@@ -84,6 +84,31 @@ Now, any changes you make in your local `./my_custom_app` folder will immediatel
 
 ---
 
+## 📦 Native Packages (Snap, `.deb`, `.rpm`)
+
+Prefer running Frappe directly on a Linux host instead of in a container? The
+snap and native distribution packages are built from a separate repository:
+
+**[vyogo-frappe-distribution](https://github.com/varun-krishnamurthy/vyogo-frappe-distribution)** *(private)*
+
+```bash
+# Debian / Ubuntu
+sudo apt install ./frappista_16.31.0-1~ubuntu2404_amd64.deb
+sudo frappista-setup --site dev.localhost --admin-password admin
+
+# any distribution with snapd
+sudo snap install frappista --classic
+sudo snap alias frappista.bench bench
+```
+
+> [!NOTE]
+> That repository vendors this one's `upload/src/nginx/frappe.conf.template`, so
+> the packages and the images route `/assets`, `/files` and `/socket.io`
+> identically. Its CI fails if the copy drifts — **if you change the nginx
+> template here, it needs picking up there.**
+
+---
+
 ## 📖 Advanced: Technical Documentation & S2I Building
 
 Are you looking to use Frappista as a base image to package your own apps for production, or want to understand how the Source-to-Image (S2I) build process works under the hood?
