@@ -89,7 +89,7 @@ Now, any changes you make in your local `./my_custom_app` folder will immediatel
 Prefer running Frappe directly on a Linux host instead of in a container? The
 snap and native distribution packages are built from a separate repository:
 
-**[vyogo-frappe-distribution](https://github.com/varun-krishnamurthy/vyogo-frappe-distribution)** *(private)*
+**[Frappium](https://github.com/vyogotech/Frappium)** *(private)*
 
 ```bash
 # Debian / Ubuntu
