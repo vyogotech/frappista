@@ -1,0 +1,12 @@
+[
+    {
+        "url": "https://github.com/frappe/erpnext",
+        "branch": "version-15",
+        "name": "erpnext"
+    },
+    {
+        "url": "https://github.com/your-org/your-custom-app.git",
+        "branch": "main",
+        "name": "your-custom-app"
+    }
+]

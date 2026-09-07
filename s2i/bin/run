@@ -19,6 +19,11 @@ error() {
 
 # Create pid directory
 mkdir -p /tmp/pids
+mkdir -p /tmp/redis
+
+# Keep Redis ephemeral in SNE mode so stale cached HTML does not survive
+# image rebuilds and point at old hashed asset filenames.
+rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
 
 # Ensure required commands are available
 command -v mysqld >/dev/null 2>&1 || error "mysqld is not installed. Please install MariaDB."
@@ -27,27 +32,57 @@ command -v bench >/dev/null 2>&1 || error "bench is not installed. Please instal
 
 # Start MariaDB with proper daemonization
 log "Starting MariaDB..."
-if mysqld --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
-  sleep 2
-  if kill -0 $(cat /tmp/pids/mysqld.pid 2>/dev/null) 2>/dev/null; then
-    log "MariaDB started successfully with PID $(cat /tmp/pids/mysqld.pid)."
-  else
-    error "MariaDB process started but died immediately. Check /var/log/mysqld.log for details."
+mkdir -p /var/run/mariadb /var/lib/mysql
+chown -R 1001:0 /var/run/mariadb /var/lib/mysql || true
+if mysqld --datadir=/var/lib/mysql --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
+  log "Waiting for MariaDB to be ready..."
+  MAX_TRIES=30
+  RETRY_COUNT=0
+  until mysqladmin ping &>/dev/null || mariadb-admin ping &>/dev/null || [ $RETRY_COUNT -ge $MAX_TRIES ]; do
+    PID=$(cat /tmp/pids/mysqld.pid 2>/dev/null || true)
+    if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
+      error "MariaDB process started but died immediately. Check /var/log/mysqld.log for details."
+    fi
+    sleep 1
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+  done
+
+  if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
+    error "MariaDB failed to respond within ${MAX_TRIES} seconds. Check /var/log/mysqld.log for details."
   fi
+
+  log "MariaDB started successfully with PID $(cat /tmp/pids/mysqld.pid)."
 else
   error "Failed to start MariaDB."
 fi
 
 # Start Redis server with proper daemonization
 log "Starting Redis server..."
-if redis-server --daemonize yes --pidfile /tmp/pids/redis.pid &> /var/log/redis.log; then
-  sleep 1
-  if kill -0 $(cat /tmp/pids/redis.pid 2>/dev/null) 2>/dev/null; then
-    log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
-  else
-    error "Redis process started but died immediately. Check /var/log/redis.log for details."
+if redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pidfile /tmp/pids/redis.pid --ignore-warnings ARM64-COW-BUG &> /var/log/redis.log; then
+  log "Waiting for Redis server to be ready..."
+  MAX_TRIES=15
+  RETRY_COUNT=0
+  until redis-cli ping &>/dev/null || [ $RETRY_COUNT -ge $MAX_TRIES ]; do
+    PID=$(cat /tmp/pids/redis.pid 2>/dev/null || true)
+    if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
+      if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+        error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
+      fi
+      error "Redis process started but died immediately. Check /var/log/redis.log for details."
+    fi
+    sleep 1
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+  done
+
+  if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
+    error "Redis server failed to respond within ${MAX_TRIES} seconds. Check /var/log/redis.log for details."
   fi
+
+  log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
 else
+  if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
+    error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
+  fi
   error "Failed to start Redis server."
 fi
 
@@ -88,14 +123,38 @@ for app in "${apps_list[@]}"; do
     log "App $app_name already registered."
   fi
 done
-ls -1 apps/ > sites/apps.txt
+(echo "frappe"; ls -1 apps/ | grep -v "^frappe$") > sites/apps.txt
 log "All apps registered."
+
+# Restore pre-built assets from image cache (populated during S2I assemble).
+# When sites/ is mounted as a volume, the built assets are wiped - this restores them.
+# Set ENABLE_ASSETS_CACHE=true to enable this feature.
+if [[ "${ENABLE_ASSETS_CACHE:-false}" == "true" ]]; then
+  if [ -d "/home/frappe/assets_cache" ] && [ -n "$(ls -A /home/frappe/assets_cache 2>/dev/null)" ]; then
+    if [ ! -d "sites/assets/frappe" ]; then
+      log "Restoring assets from image cache..."
+      mkdir -p sites/assets
+      cp -r /home/frappe/assets_cache/. sites/assets/
+      log "Assets restored."
+    else
+      log "Assets already present, skipping restore."
+    fi
+  else
+    log "Warning: No assets_cache found. Assets will be built by bench start."
+  fi
+fi
 # Start Frappe/ERPNext with bench in foreground
 log "Starting Frappe/ERPNext with bench..."
 #allow remote connections to mariadb
 mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${MYSQL_ROOT_PASSWORD}');  GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;" || true
 #allow remote connections to redis
+log "Switching off Redis protection mode"
 redis-cli CONFIG SET protected-mode no  || true
+log "Switching off Redis protection mode status - DONE with soft check"
+log "Clearing stale redis entries"
+redis-cli flushall || true
+log "Stale redis entries clearing - DONE with soft check "
+#S2I framework will manage this to run this in background
 bench start
 #allow remote connections to redis using redis-cli. use only for testing purpose
 
