@@ -1,6 +1,30 @@
 # Stage 1: Base image with tools and dependencies
-FROM quay.io/sclorg/mariadb-1011-c9s AS builder
+# Using UBI9 as base for multi-arch support (amd64 and arm64)
+FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
 USER root
+
+# Install MariaDB 10.11 and create necessary users
+# MariaDB default UID/GID in UBI9 is 27
+ENV MYSQL_UID=27 \
+    FRAPPE_UID=1001
+
+RUN dnf -y module enable mariadb:10.11 && \
+    INSTALL_PKGS="mariadb mariadb-server mariadb-server-utils mariadb-devel" && \
+    dnf install -y --setopt=tsflags=nodocs $INSTALL_PKGS && \
+    rpm -V $INSTALL_PKGS && \
+    dnf -y clean all --enablerepo='*' && \
+    mkdir -p /var/lib/mysql && \
+    mkdir -p /var/run/mariadb && \
+    chown -R ${MYSQL_UID}:${MYSQL_UID} /var/lib/mysql /var/run/mariadb && \
+    chmod 755 /var/lib/mysql /var/run/mariadb
+
+# Create default user with UID 1001 (will be renamed to frappe later by Redis setup)
+RUN useradd -u ${FRAPPE_UID} -r -g 0 -d /home/frappe -s /sbin/nologin -c "Default Application User" default && \
+    mkdir -p /home/frappe && \
+    chown ${FRAPPE_UID}:0 /home/frappe
+
+# Set APP_ROOT for compatibility
+ENV APP_ROOT=/opt/app-root
 
 # Set labels
 LABEL maintainer="Dev <dev@vyogolabs.tech>"
