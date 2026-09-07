@@ -61,25 +61,28 @@ RUN getent group redis &> /dev/null || groupadd -r redis &> /dev/null && \
     [[ "$(id redis)" == "uid=1001(redis)"* ]] && usermod -l frappe -u 1001 -d /home/frappe -m -c "Frappe Bench" redis
 
 # Setup Python
-ENV PYTHON_VERSION=3.11 \
+# Default to Python 3.11 for all Frappe versions
+# Note: Frappe v16 pyproject.toml lists Python 3.14 (not yet released)
+# Python 3.11 is tested and works. Pass --build-arg PYTHON_VERSION=3.12 to use a different version.
+ARG PYTHON_VERSION=3.11
+ENV PYTHON_VERSION=${PYTHON_VERSION} \
     PATH=$HOME/.local/bin/:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
-    CNB_STACK_ID=com.redhat.stacks.ubi9-python-311 \
     CNB_USER_ID=1001 \
     CNB_GROUP_ID=0 \
     PIP_NO_CACHE_DIR=off
 
-RUN INSTALL_PKGS="python3.11 python3.11-devel python3.11-pip" && \
+RUN INSTALL_PKGS="python${PYTHON_VERSION} python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip" && \
     dnf -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
-    alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
-    alternatives --set python /usr/bin/python3.11 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python3-config && \
-    python3.11 -m pip install --no-cache-dir --upgrade pip && \
+    alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1 && \
+    alternatives --set python /usr/bin/python${PYTHON_VERSION} && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3-config && \
+    python${PYTHON_VERSION} -m pip install --no-cache-dir --upgrade pip && \
     dnf -y clean all --enablerepo='*'
 
 # Setup Node.js and Yarn

@@ -2,6 +2,14 @@
 REGISTRY=docker.io
 REPO=vyogo
 FRAPPE_VERSION?=develop
+
+# Determine Python version based on Frappe version
+# Note: Frappe v16 pyproject.toml lists Python 3.14 requirement (aspirational, not yet released)
+# For now, using Python 3.11 which works with all current versions.
+# Update to Python 3.12+ when it becomes available and tested.
+# All versions currently use Python 3.11
+PYTHON_VERSION=3.11
+
 # Local image names (no registry prefix)
 LOCAL_IMAGE_NAME=frappe:s2i-$(FRAPPE_VERSION)
 LOCAL_ERP_IMAGE_NAME=erpnext:sne-$(FRAPPE_VERSION)
@@ -34,18 +42,20 @@ help:
 # Build for current architecture
 .PHONY: build
 build:
-	podman build -t $(LOCAL_IMAGE_NAME) .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	@echo "Building with FRAPPE_VERSION=$(FRAPPE_VERSION) and PYTHON_VERSION=$(PYTHON_VERSION)"
+	podman build -t $(LOCAL_IMAGE_NAME) . --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION) --build-arg PYTHON_VERSION=$(PYTHON_VERSION)
 
 # Build for AMD64
 .PHONY: build-amd64
 build-amd64:
-	podman build --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	@echo "Building for AMD64 with FRAPPE_VERSION=$(FRAPPE_VERSION) and PYTHON_VERSION=$(PYTHON_VERSION)"
+	podman build --platform=linux/amd64 -t $(LOCAL_IMAGE_NAME)-amd64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION) --build-arg PYTHON_VERSION=$(PYTHON_VERSION)
 
 # Build for ARM64
 .PHONY: build-arm64
 build-arm64:
-	@echo "Building $(LOCAL_IMAGE_NAME)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION)"
-	podman build --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 .  --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION)
+	@echo "Building $(LOCAL_IMAGE_NAME)-arm64 with FRAPPE_VERSION=$(FRAPPE_VERSION) and PYTHON_VERSION=$(PYTHON_VERSION)"
+	podman build --platform=linux/arm64 -t $(LOCAL_IMAGE_NAME)-arm64 . --build-arg FRAPPE_BRANCH=$(FRAPPE_VERSION) --build-arg PYTHON_VERSION=$(PYTHON_VERSION)
 	@echo "Build completed. Verifying image was created:"
 	podman images $(LOCAL_IMAGE_NAME)-arm64
 

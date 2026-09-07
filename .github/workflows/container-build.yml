@@ -285,6 +285,72 @@ jobs:
           make remove-erpnext-manifests FRAPPE_VERSION=version-16-beta
           make erpnext-manifest FRAPPE_VERSION=version-16-beta
 
+      # Clean up after version-16-beta builds to free space
+      - name: Clean up version-16-beta images
+        run: |
+          sudo podman image prune -f
+          df -h
+
+      # Build and Push Frappe version-16 (required for ERPNext)
+      - name: Build and Push Frappe (version-16) - AMD64
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make build-amd64 FRAPPE_VERSION=version-16
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-amd64 FRAPPE_VERSION=version-16
+            echo "✓ Frappe AMD64 version-16 image pushed successfully"
+          fi
+
+      - name: Build and Push Frappe (version-16) - ARM64
+        if: contains(needs.setup.outputs.components, 'frappe') || contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make build-arm64 FRAPPE_VERSION=version-16
+          echo "Verifying ARM64 image exists:"
+          podman images | grep "frappe:s2i-version-16-arm64" || echo "ERROR: ARM64 image not found!"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            make push-only-arm64 FRAPPE_VERSION=version-16
+            echo "✓ Frappe ARM64 version-16 image pushed successfully"
+          fi
+
+      - name: Create Frappe (version-16) Multi-arch Manifest
+        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'frappe')
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make remove-manifests FRAPPE_VERSION=version-16
+          make push-manifest FRAPPE_VERSION=version-16 VERSION=${{ needs.setup.outputs.version }}
+
+      # Build and Push ERPNext with Frappe version-16 (images available from previous steps)
+      - name: Build and Push ERPNext (Frappe version-16) - AMD64
+        if: contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make erpnext-amd64 FRAPPE_VERSION=version-16
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag erpnext:sne-version-16-amd64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-amd64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-amd64
+            echo "✓ ERPNext AMD64 version-16 image pushed successfully"
+          fi
+
+      - name: Build and Push ERPNext (Frappe version-16) - ARM64
+        if: contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          make erpnext-arm64 FRAPPE_VERSION=version-16
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+            podman tag erpnext:sne-version-16-arm64 docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-arm64
+            podman push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/erpnext:sne-version-16-arm64
+            echo "✓ ERPNext ARM64 version-16 image pushed successfully"
+          fi
+
+      - name: Create ERPNext (version-16) Multi-arch Manifest
+        if: github.event_name != 'pull_request' && contains(needs.setup.outputs.components, 'erpnext')
+        run: |
+          podman login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" docker.io
+          make remove-erpnext-manifests FRAPPE_VERSION=version-16
+          make erpnext-manifest FRAPPE_VERSION=version-16
+
       - name: Check disk space after
         run: |
           df -h
