@@ -79,6 +79,7 @@ if redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pid
   fi
 
   log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
+  redis-cli flushall || true
 else
   if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
     error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
@@ -154,6 +155,7 @@ log "Switching off Redis protection mode status - DONE with soft check"
 log "Clearing stale redis entries"
 redis-cli flushall || true
 log "Stale redis entries clearing - DONE with soft check "
+
 #S2I framework will manage this to run this in background
 bench start
 #allow remote connections to redis using redis-cli. use only for testing purpose

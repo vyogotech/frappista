@@ -329,7 +329,7 @@ fi
 log "Clearing Frappe cache..."
 bench --site "$site_name" clear-cache || true
 log "Flushing Redis cache and queue..."
-
+redis-cli flushall || true
 
 log "Fixing permissions..."
 
