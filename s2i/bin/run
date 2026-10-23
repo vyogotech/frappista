@@ -79,6 +79,7 @@ if redis-server --save "" --appendonly no --dir /tmp/redis --daemonize yes --pid
   fi
 
   log "Redis server started successfully with PID $(cat /tmp/pids/redis.pid)."
+  redis-cli flushall || true
 else
   if grep -q "qemu" /var/log/redis.log 2>/dev/null; then
     error "Redis segfaulted under QEMU emulation (amd64 image on ARM host). Rebuild the image for your architecture: make erpnext-arm64 && make erpnext-manifest"
