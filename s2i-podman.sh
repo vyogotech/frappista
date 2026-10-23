@@ -81,6 +81,22 @@ cp -r ${srcdir}/* upload/src/
 echo "[DEBUG] Source directory content after copy:"
 ls -la upload/src/
 
+# Inject local S2I scripts so the build uses the repo's version (not the one
+# baked into the builder image). This is essential when iterating on assemble/run.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -d "${SCRIPT_DIR}/s2i/bin" ]]; then
+  echo "[INFO] Injecting local S2I scripts into build context."
+  mkdir -p upload/scripts
+  cp -r "${SCRIPT_DIR}/s2i/bin/"* upload/scripts/
+  # Insert COPY before the RUN assemble line in the generated Dockerfile
+  if grep -q '/usr/libexec/s2i/assemble' "$dockerfile"; then
+    sed -i.bak '/\/usr\/libexec\/s2i\/assemble/i\
+COPY upload/scripts /usr/libexec/s2i/' "$dockerfile"
+    rm -f "${dockerfile}.bak"
+    echo "[DEBUG] Updated Dockerfile to use local S2I scripts."
+  fi
+fi
+
 echo "[INFO] Running podman build."
 if [[ -n "$platform" ]]; then
   podman build  --platform "$platform" -t "$build_tag" -f "$dockerfile" . --build-arg FRAPPE_BRANCH="$frappe_branch" --no-cache || { echo "[ERROR] podman build failed"; exit 1; }

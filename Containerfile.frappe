@@ -1,0 +1,17 @@
+ARG BUILDER_IMAGE=localhost/frappe:s2i-latest
+FROM ${BUILDER_IMAGE}
+
+USER root
+# Create an empty /tmp/src so s2i/assemble knows there are no custom apps
+# It will just natively initialize the Frappe bench and build core assets.
+RUN mkdir -p /tmp/src && chown -R 1001:0 /tmp/src
+COPY --chown=1001:0 ./s2i/bin/* /usr/libexec/s2i/
+RUN chmod +x /usr/libexec/s2i/*
+
+USER 1001
+# Run the internal assemble script natively
+RUN /usr/libexec/s2i/assemble
+
+# Expose standard port and set run entrypoint
+EXPOSE 8000
+CMD ["/usr/libexec/s2i/run"]
