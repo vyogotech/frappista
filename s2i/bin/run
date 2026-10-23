@@ -32,28 +32,28 @@ command -v bench >/dev/null 2>&1 || error "bench is not installed. Please instal
 
 # Start MariaDB with proper daemonization
 log "Starting MariaDB..."
-mkdir -p /var/run/mariadb /var/lib/mysql
-chown -R 1001:0 /var/run/mariadb /var/lib/mysql || true
-if mysqld --datadir=/var/lib/mysql --pid-file=/tmp/pids/mysqld.pid &> /var/log/mysqld.log & then
+mkdir -p /var/run/mariadb /var/lib/mysql /var/log/mariadb
+chown -R 1001:0 /var/run/mariadb /var/lib/mysql /var/log/mariadb || true
+if mysqld --datadir=/var/lib/mysql --pid-file=/tmp/pids/mysqld.pid &> /var/log/mariadb/mariadb.log & then
   log "Waiting for MariaDB to be ready..."
-  MAX_TRIES=30
+  MAX_TRIES=${MARIADB_MAX_TRIES:-60}
   RETRY_COUNT=0
   until mysqladmin ping &>/dev/null || mariadb-admin ping &>/dev/null || [ $RETRY_COUNT -ge $MAX_TRIES ]; do
     PID=$(cat /tmp/pids/mysqld.pid 2>/dev/null || true)
     if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
-      error "MariaDB process started but died immediately. Check /var/log/mysqld.log for details."
+      error "MariaDB process started but died immediately. Check /var/log/mariadb/mariadb.log for details."
     fi
     sleep 1
     RETRY_COUNT=$((RETRY_COUNT + 1))
   done
 
   if [ $RETRY_COUNT -ge $MAX_TRIES ]; then
-    error "MariaDB failed to respond within ${MAX_TRIES} seconds. Check /var/log/mysqld.log for details."
+    error "MariaDB failed to respond within ${MAX_TRIES} seconds. Check /var/log/mariadb/mariadb.log for details."
   fi
 
   log "MariaDB started successfully with PID $(cat /tmp/pids/mysqld.pid)."
 else
-  error "Failed to start MariaDB."
+  error "Failed to start MariaDB. Check /var/log/mariadb/mariadb.log for details."
 fi
 
 # Start Redis server with proper daemonization
@@ -97,7 +97,7 @@ cleanup() {
   fi
   
   if [ -f /tmp/pids/mysqld.pid ]; then
-    mysqladmin shutdown || kill -15 $(cat /tmp/pids/mysqld.pid)
+    mysqladmin -u root -p"${MYSQL_ROOT_PASSWORD}" shutdown || mysqladmin shutdown || kill -15 $(cat /tmp/pids/mysqld.pid)
     log "MariaDB stopped."
   fi
   
