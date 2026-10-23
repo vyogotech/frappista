@@ -274,14 +274,14 @@ jobs:
   create-manifests:
     needs: [setup, build-amd64, build-arm64]
     if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman qemu-user-static
+          sudo apt-get install -y podman qemu-user-static 2>/dev/null || sudo apt-get install -y podman qemu-user-binfmt 2>/dev/null || sudo apt-get install -y podman
           echo -e "[engine]\nenable_inheritable = true" | sudo tee -a /etc/containers/containers.conf
           sudo systemctl restart podman || true
 
@@ -312,7 +312,7 @@ jobs:
   smoke-test:
     needs: [setup, create-manifests]
     if: needs.setup.outputs.should_build == 'true' && github.event_name != 'pull_request' && !github.event.inputs.image_ref
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -458,7 +458,7 @@ jobs:
 
   image-integrity-check:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.image_ref != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
