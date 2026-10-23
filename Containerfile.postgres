@@ -197,35 +197,59 @@ COPY --chown=1001:0 ./s2i/bin/usage /usr/libexec/s2i/usage
 RUN chmod +x /usr/libexec/s2i/* && \
     chown 1001:0 /usr/libexec/s2i/*
 
+# Pre-create cache directories and set ownership so frappe user can write
+RUN mkdir -p /var/lib/redis/.cache /home/frappe/.cache /var/lib/redis/.npm /home/frappe/.npm && \
+    chown -R 1001:0 /var/lib/redis /home/frappe && \
+    chmod -R ug+rwx /var/lib/redis /home/frappe
+
+ENV CYPRESS_INSTALL_BINARY=0
+
 # Switch to frappe user for application setup
 USER frappe
 
 # Install Frappe bench and dependencies
-RUN --mount=type=cache,id=pip-final-${TARGETARCH},target=/home/frappe/.cache/pip,uid=1001,gid=0 \
-    pip install "click<8.2" "frappe-bench==5.21.5" \
-    && pip install redis \
-    && pip install psycopg2-binary
+RUN --mount=type=cache,id=pip-${TARGETARCH},target=/var/lib/redis/.cache/pip,uid=1001,gid=0 \
+    --mount=type=cache,id=pip-home-${TARGETARCH},target=/home/frappe/.cache/pip,uid=1001,gid=0 \
+    pip install --no-cache-dir "click<8.2" "frappe-bench==5.21.5" redis psycopg2-binary
 
 # Setup Frappe
 WORKDIR /home/frappe
 ARG FRAPPE_BRANCH=develop
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
+ENV FRAPPE_BRANCH=${FRAPPE_BRANCH}
 
-RUN --mount=type=cache,id=pip-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/pip,uid=1001,gid=0 \
-  --mount=type=cache,id=npm-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.npm,uid=1001,gid=0 \
-  echo "using version ${FRAPPE_BRANCH}" && bench init \
-  --frappe-branch=${FRAPPE_BRANCH} \
-  --frappe-path=${FRAPPE_PATH} \
-  --no-backups \
-  --skip-redis-config-generation \
-  /home/frappe/frappe-bench && \
-  cd /home/frappe/frappe-bench && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
-  chown -R 1001:0 . && chmod -R ug+rwX . && \
-  bench set-config --global redis_cache "redis://localhost:6379" && \
-  bench set-config --global redis_queue "redis://localhost:6379" && \
-  bench set-config --global redis_socketio "redis://localhost:6379" && \
-  bench set-config --global host "0.0.0.0"
+RUN --mount=type=cache,id=pip-${FRAPPE_BRANCH}-${TARGETARCH},target=/var/lib/redis/.cache/pip,uid=1001,gid=0 \
+    --mount=type=cache,id=uv-${FRAPPE_BRANCH}-${TARGETARCH},target=/var/lib/redis/.cache/uv,uid=1001,gid=0 \
+    --mount=type=cache,id=yarn-${FRAPPE_BRANCH}-${TARGETARCH},target=/var/lib/redis/.cache/yarn,uid=1001,gid=0 \
+    --mount=type=cache,id=nodegyp-${FRAPPE_BRANCH}-${TARGETARCH},target=/var/lib/redis/.cache/node-gyp,uid=1001,gid=0 \
+    --mount=type=cache,id=npm-${FRAPPE_BRANCH}-${TARGETARCH},target=/var/lib/redis/.npm,uid=1001,gid=0 \
+    --mount=type=cache,id=cypress-${FRAPPE_BRANCH}-${TARGETARCH},target=/var/lib/redis/.cache/Cypress,uid=1001,gid=0 \
+    --mount=type=cache,id=pip-home-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/pip,uid=1001,gid=0 \
+    --mount=type=cache,id=uv-home-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/uv,uid=1001,gid=0 \
+    --mount=type=cache,id=yarn-home-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/yarn,uid=1001,gid=0 \
+    --mount=type=cache,id=nodegyp-home-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/node-gyp,uid=1001,gid=0 \
+    --mount=type=cache,id=npm-home-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.npm,uid=1001,gid=0 \
+    --mount=type=cache,id=cypress-home-${FRAPPE_BRANCH}-${TARGETARCH},target=/home/frappe/.cache/Cypress,uid=1001,gid=0 \
+    echo "using version ${FRAPPE_BRANCH}" && bench init \
+    --frappe-branch=${FRAPPE_BRANCH} \
+    --frappe-path=${FRAPPE_PATH} \
+    --no-backups \
+    --skip-redis-config-generation \
+    /home/frappe/frappe-bench && \
+    cd /home/frappe/frappe-bench && \
+    find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+    chown -R 1001:0 . && chmod -R ug+rwX . && \
+    bench set-config --global redis_cache "redis://localhost:6379" && \
+    bench set-config --global redis_queue "redis://localhost:6379" && \
+    bench set-config --global redis_socketio "redis://localhost:6379" && \
+    bench set-config --global host "0.0.0.0"
+
+# Clean any unmounted cache and ensure cache directory is present with proper ownership
+USER root
+RUN rm -rf /var/lib/redis/.cache/* /home/frappe/.cache/* /root/.cache/* /var/lib/redis/.npm/* /home/frappe/.npm/* /root/.npm/* 2>/dev/null || true && \
+    mkdir -p /var/lib/redis/.cache /home/frappe/.cache && \
+    chown -R 1001:0 /var/lib/redis/.cache /home/frappe/.cache
+USER frappe
 
 # Expose ports
 EXPOSE 8000

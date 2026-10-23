@@ -311,6 +311,16 @@ fi
 
 # Cleanup redis entries
 redis-cli flushall 
+
+# Clean up build caches so they never get committed to the image layer
+log "Cleaning up build caches (yarn, pip, uv, npm, node-gyp)..."
+yarn cache clean --force 2>/dev/null || true
+npm cache clean --force 2>/dev/null || true
+rm -rf /var/lib/redis/.cache/* /home/frappe/.cache/* /root/.cache/* 2>/dev/null || true
+rm -rf /var/lib/redis/.npm/* /home/frappe/.npm/* /root/.npm/* 2>/dev/null || true
+mkdir -p /var/lib/redis/.cache /home/frappe/.cache
+chown -R 1001:0 /var/lib/redis/.cache /home/frappe/.cache 2>/dev/null || true
+
 # Return to initial directory
 cd "$WORKDIR"
 log "Assemble completed successfully."

@@ -179,6 +179,8 @@ jobs:
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
+            /var/tmp/buildah-cache-0
+            /var/tmp/buildah-cache-1001
           key: podman-build-mariadb-amd64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             podman-build-mariadb-amd64-${{ runner.os }}-${{ github.ref_name }}-
@@ -262,6 +264,8 @@ jobs:
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
+            /var/tmp/buildah-cache-0
+            /var/tmp/buildah-cache-1001
           key: podman-build-postgres-amd64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             podman-build-postgres-amd64-${{ runner.os }}-${{ github.ref_name }}-
@@ -335,6 +339,8 @@ jobs:
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
+            /var/tmp/buildah-cache-0
+            /var/tmp/buildah-cache-1001
           key: podman-build-mariadb-arm64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             podman-build-mariadb-arm64-${{ runner.os }}-${{ github.ref_name }}-
@@ -418,6 +424,8 @@ jobs:
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
+            /var/tmp/buildah-cache-0
+            /var/tmp/buildah-cache-1001
           key: podman-build-postgres-arm64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             podman-build-postgres-arm64-${{ runner.os }}-${{ github.ref_name }}-
