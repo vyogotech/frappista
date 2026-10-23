@@ -27,7 +27,8 @@ FLUSH PRIVILEGES;
 EOF
 
     mysqld --datadir=/var/lib/mysql --init-file=/tmp/mysql-init.sql &
-    log "MariaDB service started."
+    MYSQLD_PID=$!
+    log "MariaDB service started with PID $MYSQLD_PID."
 }
 
 start_redis()
@@ -321,6 +322,23 @@ rm -rf /var/lib/redis/.cache/* /home/frappe/.cache/* /root/.cache/* 2>/dev/null 
 rm -rf /var/lib/redis/.npm/* /home/frappe/.npm/* /root/.npm/* 2>/dev/null || true
 mkdir -p /var/lib/redis/.cache /home/frappe/.cache
 chown -R 1001:0 /var/lib/redis/.cache /home/frappe/.cache 2>/dev/null || true
+
+# Clean shutdown of MariaDB and Redis so the committed image does not require crash recovery on boot
+log "Shutting down MariaDB cleanly..."
+mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SET GLOBAL innodb_fast_shutdown = 0;" || mysql -u root -e "SET GLOBAL innodb_fast_shutdown = 0;" || true
+mysqladmin -u root -p"${MYSQL_ROOT_PASSWORD}" shutdown || mysqladmin -u root shutdown || true
+for i in $(seq 1 120); do
+    kill -0 "$MYSQLD_PID" 2>/dev/null || break
+    sleep 1
+done
+if kill -0 "$MYSQLD_PID" 2>/dev/null; then
+    log "ERROR: MariaDB did not shut down within 120 seconds."
+else
+    log "MariaDB shut down cleanly."
+fi
+log "Shutting down Redis cleanly..."
+redis-cli shutdown nosave || true
+rm -f /home/frappe/frappe-bench/dump.rdb /var/lib/redis/data/dump.rdb /tmp/redis/dump.rdb
 
 # Return to initial directory
 cd "$WORKDIR"
