@@ -157,6 +157,8 @@ jobs:
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
+            /var/tmp/buildah-cache-0
+            /var/tmp/buildah-cache-1001
           key: podman-build-amd64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             podman-build-amd64-${{ runner.os }}-${{ github.ref_name }}-
@@ -229,6 +231,8 @@ jobs:
             /root/.local/share/containers/storage/overlay
             /home/runner/.local/share/containers/storage/cache
             /home/runner/.local/share/containers/storage/overlay
+            /var/tmp/buildah-cache-0
+            /var/tmp/buildah-cache-1001
           key: podman-build-arm64-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             podman-build-arm64-${{ runner.os }}-${{ github.ref_name }}-
